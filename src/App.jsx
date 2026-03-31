@@ -1,4 +1,5 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
+import { supabase } from "./supabaseClient";
 
 const input = {
   width: "100%",
@@ -191,6 +192,13 @@ function SavedReportView({ report }) {
 }
 
 export default function FleetReportApp() {
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
   const [activeFleet, setActiveFleet] = useState("1");
   const [fleetForms, setFleetForms] = useState(() =>
     fleetTabs.reduce((acc, fleet) => {
@@ -199,6 +207,10 @@ export default function FleetReportApp() {
     }, {})
   );
   const [savedReports, setSavedReports] = useState([]);
+
+useEffect(() => {
+  loadReports();
+}, []);
   const [deletePassword, setDeletePassword] = useState("");
   const [deleteMessage, setDeleteMessage] = useState("");
   const [selectedReport, setSelectedReport] = useState(null);
@@ -257,9 +269,36 @@ export default function FleetReportApp() {
 • ${form.trailers[8]}\n\nIron Package: ${form.ironPackage}\n\nIssues / Notes / Follow-Ups:\n• ${form.issues[0]}\n• ${form.issues[1]}`;
   }, [form]);
 
-  const saveReport = () => {
-    setSavedReports((prev) => [{ id: Date.now(), ...form }, ...prev]);
-  };
+  const loadReports = async () => {
+  const { data, error } = await supabase
+    .from("reports")
+    .select("*")
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error(error);
+    return;
+  }
+
+  setSavedReports(data.map((r) => ({ id: r.id, ...r.report_data, fleet: r.fleet })));
+};
+
+const saveReport = async () => {
+  const { error } = await supabase.from("reports").insert([
+    {
+      fleet: form.fleet,
+      report_data: form,
+    },
+  ]);
+
+  if (error) {
+    alert("Error saving report");
+    console.error(error);
+    return;
+  }
+
+  loadReports();
+};
 
   const loadLastReport = () => {
     const lastForFleet = savedReports.find((report) => String(report.fleet) === String(activeFleet));
@@ -275,16 +314,30 @@ export default function FleetReportApp() {
     }
   };
 
-  const deleteReport = (reportId) => {
-    if (deletePassword !== "1775") {
-      setDeleteMessage("Wrong password");
-      return;
-    }
-    setSavedReports((prev) => prev.filter((report) => report.id !== reportId));
-    if (selectedReport?.id === reportId) setSelectedReport(null);
-    setDeleteMessage("Report deleted");
-    setDeletePassword("");
-  };
+  const deleteReport = async (reportId) => {
+  if (deletePassword !== "1775") {
+    setDeleteMessage("Wrong password");
+    return;
+  }
+
+  const { error } = await supabase
+    .from("reports")
+    .delete()
+    .eq("id", reportId);
+
+  if (error) {
+    console.error(error);
+    setDeleteMessage("Error deleting report");
+    return;
+  }
+
+  loadReports();
+
+  if (selectedReport?.id === reportId) setSelectedReport(null);
+
+  setDeleteMessage("Report deleted");
+  setDeletePassword("");
+};
 
   const viewSavedReport = (report) => {
     setSelectedReport(report);
@@ -330,7 +383,11 @@ export default function FleetReportApp() {
           <p style={{ color: "#475569", marginBottom: 0 }}>Exact template version. Fill it out once, then use load last report and only change what changed.</p>
         </div>
 
-        <div style={{ display: "grid", gap: 16, gridTemplateColumns: "1.5fr 1fr" }}>
+        <div style={{
+          display: "grid",
+          gap: 16,
+          gridTemplateColumns: isMobile ? "1fr" : "1.5fr 1fr"
+        }}>
           <div style={card}>
             <div style={row}>
               <div>
