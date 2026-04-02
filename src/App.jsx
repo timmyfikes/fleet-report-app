@@ -75,7 +75,10 @@ export default function FleetReportApp() {
   const [showHelp, setShowHelp] = useState(false);
   const [showPmValidation, setShowPmValidation] = useState(false);
   const [copyMessage, setCopyMessage] = useState("");
+  const [copyCtaMessage, setCopyCtaMessage] = useState("");
+  const [highlightCopyCta, setHighlightCopyCta] = useState(false);
   const savedReportViewRef = useRef(null);
+  const copyTeamsButtonRef = useRef(null);
 
   const form = fleetForms[activeFleet];
   const equipmentBox = {
@@ -575,6 +578,19 @@ ${issueLines}`;
     }, 250);
   }, []);
 
+  const jumpToCopyCta = useCallback((fleet) => {
+    setCopyCtaMessage(`Report saved. You can now copy this for Fleet ${fleet} Teams chat.`);
+    setHighlightCopyCta(true);
+    window.setTimeout(() => {
+      savedReportViewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      window.setTimeout(() => {
+        copyTeamsButtonRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 120);
+    }, 120);
+    window.setTimeout(() => setCopyCtaMessage(""), NOTIFICATION_MS);
+    window.setTimeout(() => setHighlightCopyCta(false), 6000);
+  }, []);
+
   const saveReport = async () => {
   if (isSaving) return;
 
@@ -635,6 +651,7 @@ ${issueLines}`;
   await fetchSavedReports();
   setShowPmValidation(false);
   setSaveMessage("Report Saved ✅");
+  jumpToCopyCta(form.fleet);
 
   setTimeout(() => {
     setIsSaving(false);
@@ -1786,12 +1803,17 @@ style={selectInput}
                   <span>{viewMessage}</span>
                 </div>
               )}
-              {unitMessage && (
-                <div style={{ ...notificationBase, ...notificationStyles.warning }}>
-                  <span>{unitMessage}</span>
-                </div>
-              )}
-            </div>
+            {unitMessage && (
+              <div style={{ ...notificationBase, ...notificationStyles.warning }}>
+                <span>{unitMessage}</span>
+              </div>
+            )}
+            {copyCtaMessage && (
+              <div style={{ ...notificationBase, ...notificationStyles.info }}>
+                <span>{copyCtaMessage}</span>
+              </div>
+            )}
+          </div>
 
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 18, alignItems: "center", justifyContent: "center" }}>
               <button
@@ -1822,6 +1844,8 @@ style={selectInput}
                 copyReportForTeams={copyReportForTeams}
                 isMobile={isMobile}
                 copyMessage={copyMessage}
+                copyTeamsButtonRef={copyTeamsButtonRef}
+                highlightCopyCta={highlightCopyCta}
               />
             </div>
 
