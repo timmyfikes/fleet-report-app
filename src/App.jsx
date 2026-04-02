@@ -704,9 +704,14 @@ ${issueLines}`;
       document.body.removeChild(textarea);
     }
 
-    setCopyMessage(copied ? "Copied for Microsoft Teams ✅" : "Unable to copy report");
+    const fleetLabel = resolvedSelectedReport?.fleet || form.fleet || "";
+    setCopyMessage(
+      copied
+        ? `Copied for Microsoft Teams ✅ Please paste into the Pumpdown Fleet ${fleetLabel} chat.`
+        : "Unable to copy report"
+    );
     setTimeout(() => setCopyMessage(""), NOTIFICATION_MS);
-  }, [resolvedSelectedReport]);
+  }, [resolvedSelectedReport, form.fleet]);
 
   const deleteReport = async (reportId) => {
   if (!deleteUnlocked) return;
