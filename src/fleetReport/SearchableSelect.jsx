@@ -3,39 +3,34 @@ import { input } from "./config";
 
 export const SearchableSelect = memo(function SearchableSelect({ value, onChange, options, placeholder, enableOther = false }) {
   const [isOpen, setIsOpen] = useState(false);
-  const [filterText, setFilterText] = useState("");
   const [isCustomEntry, setIsCustomEntry] = useState(false);
   const isTypingCustom = isCustomEntry && !options.includes(value);
 
   const filteredOptions = useMemo(() => {
-    const q = (filterText || "").toLowerCase().trim();
+    const q = (isTypingCustom ? value : "").toLowerCase().trim();
     if (!q) return options;
     return options.filter((option) => option.toLowerCase().includes(q));
-  }, [filterText, options]);
+  }, [isTypingCustom, value, options]);
 
   return (
     <div style={{ position: "relative", marginBottom: 8 }}>
       <input
-        style={{ ...input, paddingRight: 36 }}
+        style={{ ...input, paddingRight: 36, cursor: isTypingCustom ? "text" : "pointer" }}
         placeholder={placeholder}
-        value={isOpen && !isTypingCustom ? filterText : value}
+        value={value}
+        readOnly={!isTypingCustom}
         onFocus={() => {
           setIsOpen(true);
-          if (!isTypingCustom) setFilterText("");
         }}
         onChange={(e) => {
-          const nextValue = e.target.value;
           if (isTypingCustom) {
-            onChange(nextValue);
-          } else {
-            setFilterText(nextValue);
+            onChange(e.target.value);
           }
           setIsOpen(true);
         }}
         onBlur={() => {
           window.setTimeout(() => {
             setIsOpen(false);
-            setFilterText("");
           }, 150);
         }}
       />
@@ -65,7 +60,6 @@ export const SearchableSelect = memo(function SearchableSelect({ value, onChange
                 onClick={() => {
                   onChange(option);
                   setIsCustomEntry(false);
-                  setFilterText("");
                   setIsOpen(false);
                 }}
                 style={{
@@ -92,7 +86,6 @@ export const SearchableSelect = memo(function SearchableSelect({ value, onChange
               onClick={() => {
                 setIsCustomEntry(true);
                 onChange("");
-                setFilterText("");
                 setIsOpen(false);
               }}
               style={{
