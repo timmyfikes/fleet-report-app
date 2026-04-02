@@ -34,9 +34,13 @@ import {
   toNameCase,
 } from "./fleetReport/config";
 import { SearchableSelect } from "./fleetReport/SearchableSelect";
-import { SavedReportView } from "./fleetReport/SavedReportView";
 import { formatReportForTeams } from "./fleetReport/formatReportForTeams";
 import wsEnergyLogo from "./assets/ws_energy_svcs_logo.jpeg";
+import { HeaderCard } from "./fleetReport/components/HeaderCard";
+import { PreviewPanel } from "./fleetReport/components/PreviewPanel";
+import { SavedReportsPanel } from "./fleetReport/components/SavedReportsPanel";
+import { DeleteAccessModal } from "./fleetReport/components/DeleteAccessModal";
+import { HelpModal } from "./fleetReport/components/HelpModal";
 
 export default function FleetReportApp() {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
@@ -749,69 +753,14 @@ ${issueLines}`;
   return (
     <div style={{ background: "linear-gradient(180deg, #f3f7fc 0%, #f8fafc 45%, #f8fafc 100%)", minHeight: "100vh", padding: isMobile ? 12 : 18, colorScheme: "light", color: "#111827" }}>
       <div style={{ maxWidth: 1140, margin: "0 auto" }}>
-        <div style={{ ...card, marginBottom: 16, position: "relative" }}>
-          <button
-            type="button"
-            onClick={() => setShowHelp(true)}
-            style={{
-              position: "absolute",
-              top: 14,
-              right: 14,
-              ...input,
-              width: "auto",
-              padding: "8px 12px",
-              background: "#eff6ff",
-              border: "1px solid #93c5fd",
-              color: "#1d4ed8",
-              WebkitTextFillColor: "#1d4ed8",
-              fontWeight: 700,
-              fontSize: 13,
-              cursor: "pointer",
-            }}
-          >
-            Help
-          </button>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14, justifyContent: "center" }}>
-            {fleetTabs.map((fleet) => (
-              <button
-                key={fleet}
-                onClick={() => setActiveFleet(fleet)}
-                style={{
-                  ...input,
-                  width: "auto",
-                  padding: "10px 14px",
-                  cursor: "pointer",
-                  border: activeFleet === fleet ? "2px solid #2563eb" : "1px solid #cbd5e1",
-                  background: activeFleet === fleet ? "#dbeafe" : "#ffffff",
-                  color: "#111827",
-                  fontWeight: 700,
-                }}
-              >
-                Fleet {fleet}
-              </button>
-            ))}
-          </div>
-          <div style={{ textAlign: "center" }}>
-            <img
-              src={wsEnergyLogo}
-              alt="WS Energy Services logo"
-              style={{
-                width: isMobile ? 130 : 190,
-                height: "auto",
-                display: "block",
-                margin: "0 auto 10px",
-                objectFit: "contain",
-              }}
-            />
-            <h1 style={{ margin: 0, fontSize: isMobile ? 22 : 30, lineHeight: 1.2, color: "#111827", WebkitTextFillColor: "#111827" }}>
-              🔧 END-OF-SHIFT INVENTORY & PM REPORT
-            </h1>
-          </div>
-          <p style={{ color: "#475569", margin: "10px auto 0", maxWidth: 840, lineHeight: 1.5, textAlign: "center" }}>
-            Only fill in the sections that apply. Please ensure all equipment on location is added. Fill it out once, then use Load Last Report and only change what changed.
-          </p>
-          
-        </div>
+        <HeaderCard
+          isMobile={isMobile}
+          activeFleet={activeFleet}
+          fleetTabs={fleetTabs}
+          setActiveFleet={setActiveFleet}
+          setShowHelp={setShowHelp}
+          wsEnergyLogo={wsEnergyLogo}
+        />
 
         <div style={{
           display: "grid",
@@ -1852,280 +1801,37 @@ style={selectInput}
           </div>
 
           <div style={{ display: "grid", gap: 16, alignContent: "start" }}>
-            <div style={card}>
-              <h3 style={{ marginTop: 0 }}>{resolvedSelectedReport ? "📄 Saved Report View" : "👀 Preview"}</h3>
-              {resolvedSelectedReport ? (
-                <>
-                  <SavedReportView report={resolvedSelectedReport} />
-                  <div style={{ display: "flex", justifyContent: "center", marginTop: 12, width: "100%" }}>
-                    <button
-                      type="button"
-                      onClick={copyReportForTeams}
-                      style={{
-                        ...input,
-                        width: isMobile ? "100%" : "auto",
-                        maxWidth: 360,
-                        padding: "10px 12px",
-                        background: "#dbeafe",
-                        border: "1px solid #93c5fd",
-                        color: "#1d4ed8",
-                        WebkitTextFillColor: "#1d4ed8",
-                        fontWeight: 700,
-                        cursor: "pointer",
-                      }}
-                    >
-                      Copy For Microsoft Teams
-                    </button>
-                  </div>
-                  {copyMessage ? (
-                    <div style={{ marginTop: 8, textAlign: "center", color: "#166534", fontWeight: 700, fontSize: 13 }}>{copyMessage}</div>
-                  ) : null}
-                </>
-              ) : (
-                <pre style={{ whiteSpace: "pre-wrap", fontFamily: "inherit", fontSize: 14, margin: 0 }}>{summary}</pre>
-              )}
-            </div>
+            <PreviewPanel
+              resolvedSelectedReport={resolvedSelectedReport}
+              summary={summary}
+              copyReportForTeams={copyReportForTeams}
+              isMobile={isMobile}
+              copyMessage={copyMessage}
+            />
 
-            <div style={card}>
-              <div style={{ display: "grid", gap: 10, justifyItems: "center", textAlign: "center" }}>
-                <h3 style={{ marginTop: 0, marginBottom: 0 }}>Saved Reports – Fleet {activeFleet}</h3>
-                <button
-                  type="button"
-                  onClick={openDeleteAccessPrompt}
-                  style={{
-                    ...input,
-                    width: "auto",
-                    padding: "8px 10px",
-                    background: deleteUnlocked ? "#dcfce7" : "#fee2e2",
-                    border: deleteUnlocked ? "1px solid #86efac" : "1px solid #fca5a5",
-                    color: deleteUnlocked ? "#166534" : "#991b1b",
-                    WebkitTextFillColor: deleteUnlocked ? "#166534" : "#991b1b",
-                    cursor: "pointer",
-                    fontWeight: 600,
-                    fontSize: 13,
-                  }}
-                >
-                  Delete Reports
-                </button>
-              </div>
+            <SavedReportsPanel
+              activeFleet={activeFleet}
+              deleteUnlocked={deleteUnlocked}
+              openDeleteAccessPrompt={openDeleteAccessPrompt}
+              reportsLoading={reportsLoading}
+              visibleSavedReports={visibleSavedReports}
+              viewSavedReport={viewSavedReport}
+              loadSavedReport={loadSavedReport}
+              openDeletePrompt={openDeletePrompt}
+              deleteTargetId={deleteTargetId}
+              deleteReport={deleteReport}
+              cancelDeletePrompt={cancelDeletePrompt}
+            />
 
-              {reportsLoading ? (
-                <p style={{ color: "#64748b", textAlign: "center" }}>Loading reports...</p>
-              ) : visibleSavedReports.length === 0 ? (
-                <p style={{ color: "#64748b", textAlign: "center" }}>No saved reports yet.</p>
-              ) : (
-                visibleSavedReports.map((r) => (
-                  <div key={r.id} style={{ borderTop: "1px solid #e5e7eb", paddingTop: 10, marginTop: 10, textAlign: "center" }}>
-                    <strong>Fleet {r.fleet || "No Fleet"}</strong>
-                    <div>{r.shift} shift • {r.date}</div>
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8, justifyContent: "center", alignItems: "center" }}>
-                      <button
-                        onClick={() => viewSavedReport(r)}
-                        style={{
-                          background: "#dbeafe",
-                          color: "#1d4ed8",
-                          border: "1px solid #93c5fd",
-                          borderRadius: 10,
-                          padding: "8px 10px",
-                          cursor: "pointer",
-                          fontWeight: 600,
-                        }}
-                      >
-                        View Report
-                      </button>
-                      <button
-                        onClick={() => loadSavedReport(r)}
-                        style={{
-                          background: "#dcfce7",
-                          color: "#166534",
-                          border: "1px solid #86efac",
-                          borderRadius: 10,
-                          padding: "8px 10px",
-                          cursor: "pointer",
-                          fontWeight: 600,
-                        }}
-                      >
-                        Load This Report
-                      </button>
-                      {deleteUnlocked ? (
-                        <button
-                          onClick={() => openDeletePrompt(r.id)}
-                          style={{
-                            background: "#fee2e2",
-                            color: "#991b1b",
-                            border: "1px solid #fca5a5",
-                            borderRadius: 10,
-                            padding: "8px 10px",
-                            cursor: "pointer",
-                            fontWeight: 600,
-                          }}
-                        >
-                          Delete Report
-                        </button>
-                      ) : null}
-                    </div>
+            <DeleteAccessModal
+              showDeleteAccessPrompt={showDeleteAccessPrompt}
+              deletePassword={deletePassword}
+              setDeletePassword={setDeletePassword}
+              confirmDeleteAccess={confirmDeleteAccess}
+              cancelDeleteAccessPrompt={cancelDeleteAccessPrompt}
+            />
 
-                    {deleteTargetId === r.id ? (
-                      <div style={{ marginTop: 10, padding: 12, border: "1px solid #fecaca", background: "#fff7f7", borderRadius: 12 }}>
-                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10, justifyContent: "center", alignItems: "center" }}>
-                          <button
-                            onClick={() => deleteReport(r.id)}
-                            style={{
-                              background: "#991b1b",
-                              color: "#ffffff",
-                              border: "none",
-                              borderRadius: 10,
-                              padding: "8px 12px",
-                              cursor: "pointer",
-                              fontWeight: 600,
-                            }}
-                          >
-                            Confirm Delete
-                          </button>
-                          <button
-                            onClick={cancelDeletePrompt}
-                            style={{
-                              background: "#e5e7eb",
-                              color: "#111827",
-                              border: "none",
-                              borderRadius: 10,
-                              padding: "8px 12px",
-                              cursor: "pointer",
-                              fontWeight: 600,
-                            }}
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
-                ))
-              )}
-            </div>
-
-            {showDeleteAccessPrompt ? (
-              <div
-                style={{
-                  position: "fixed",
-                  inset: 0,
-                  background: "rgba(15,23,42,0.35)",
-                  display: "grid",
-                  placeItems: "center",
-                  padding: 16,
-                  zIndex: 70,
-                }}
-              >
-                <div
-                  style={{
-                    ...card,
-                    width: "100%",
-                    maxWidth: 420,
-                    padding: 16,
-                  }}
-                >
-                  <label style={label}>Enter delete password</label>
-                  <input
-                    style={input}
-                    type="password"
-                    value={deletePassword}
-                    onChange={(e) => setDeletePassword(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") confirmDeleteAccess();
-                    }}
-                    placeholder="Password required"
-                    autoFocus
-                  />
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
-                    <button
-                      type="button"
-                      onClick={confirmDeleteAccess}
-                      style={{
-                        background: "#991b1b",
-                        color: "#ffffff",
-                        border: "none",
-                        borderRadius: 10,
-                        padding: "8px 12px",
-                        cursor: "pointer",
-                        fontWeight: 600,
-                      }}
-                    >
-                      Unlock Delete
-                    </button>
-                    <button
-                      type="button"
-                      onClick={cancelDeleteAccessPrompt}
-                      style={{
-                        background: "#e5e7eb",
-                        color: "#111827",
-                        border: "none",
-                        borderRadius: 10,
-                        padding: "8px 12px",
-                        cursor: "pointer",
-                        fontWeight: 600,
-                      }}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ) : null}
-
-            {showHelp ? (
-              <div
-                style={{
-                  position: "fixed",
-                  inset: 0,
-                  background: "rgba(15,23,42,0.35)",
-                  display: "grid",
-                  placeItems: "center",
-                  padding: 16,
-                  zIndex: 80,
-                }}
-              >
-                <div
-                  style={{
-                    ...card,
-                    width: "100%",
-                    maxWidth: 620,
-                    maxHeight: "80vh",
-                    overflowY: "auto",
-                    padding: 18,
-                  }}
-                >
-                  <h3 style={{ marginTop: 0, marginBottom: 10 }}>❓ How To Use This Report</h3>
-                  <div style={{ color: "#475569", lineHeight: 1.5 }}>
-                    Fill in only what applies to your location and shift. Most sections support adding or removing rows as needed.
-                  </div>
-                  <ol style={{ margin: "12px 0 0", paddingLeft: 20, color: "#1f2937", lineHeight: 1.6 }}>
-                    <li>Choose Fleet tab, Date, and Shift.</li>
-                    <li>Add units and equipment in Inventory sections.</li>
-                    <li>Complete PM fields for any active truck, tractor, pump, or generator.</li>
-                    <li>Add supplies needed and issue notes before saving.</li>
-                    <li>Use `Load Last Report` to copy the latest report for this fleet.</li>
-                    <li>Use Saved Reports on the right to view, load, or delete old reports.</li>
-                  </ol>
-                  <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
-                    <button
-                      type="button"
-                      onClick={() => setShowHelp(false)}
-                      style={{
-                        ...input,
-                        width: "auto",
-                        padding: "8px 12px",
-                        background: "#e5e7eb",
-                        border: "none",
-                        cursor: "pointer",
-                        fontWeight: 700,
-                      }}
-                    >
-                      Close
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ) : null}
+            <HelpModal showHelp={showHelp} setShowHelp={setShowHelp} />
           </div>
         </div>
       </div>
