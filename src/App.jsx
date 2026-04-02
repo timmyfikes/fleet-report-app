@@ -76,6 +76,19 @@ export default function FleetReportApp() {
   const [copyMessage, setCopyMessage] = useState("");
 
   const form = fleetForms[activeFleet];
+  const subsectionDivider = {
+    gridColumn: "1 / -1",
+    borderTop: "1px solid #d7e1ee",
+    margin: "10px 0 4px",
+    paddingTop: 8,
+  };
+  const subsectionTitle = {
+    fontSize: 13,
+    fontWeight: 800,
+    letterSpacing: 0.3,
+    color: "#475569",
+    textTransform: "uppercase",
+  };
 
   const fetchSavedReports = useCallback(async () => {
     if (!supabase) {
@@ -931,6 +944,9 @@ ${issueLines}`;
                   ) : null}
                 </div>
 
+                <div style={subsectionDivider}>
+                  <div style={subsectionTitle}>Support Trailers</div>
+                </div>
                 <div>
                   <label style={label}>Support Trailers / Floats</label>
                   <div style={{ fontSize: 13, color: "#475569", marginBottom: 6 }}>
@@ -955,6 +971,9 @@ ${issueLines}`;
                   ) : null}
                 </div>
 
+                <div style={subsectionDivider}>
+                  <div style={subsectionTitle}>Iron Package</div>
+                </div>
                 <div style={{ gridColumn: "1 / -1" }}>
                   <label style={label}>🔩 Iron Package</label>
                   <div style={{ display: "grid", gap: 8, gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr" }}>
@@ -977,6 +996,9 @@ ${issueLines}`;
                 </div>
               </div>
 
+              <div style={subsectionDivider}>
+                <div style={subsectionTitle}>Assigned Trucks</div>
+              </div>
               <div style={{ ...row, marginTop: 8 }}>
                 <div>
                   <h3>Day Shift Truck(s)</h3>
@@ -1069,6 +1091,9 @@ ${issueLines}`;
                 </div>
               </div>
 
+              <div style={subsectionDivider}>
+                <div style={subsectionTitle}>Chemical Skids</div>
+              </div>
               <div style={section}>
                 <h3>Chem Add / Chemical Skid(s)</h3>
                 {form.chemicalSkids.map((v, i) => {
