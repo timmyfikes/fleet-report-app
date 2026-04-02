@@ -52,6 +52,12 @@ export const formatReportForTeams = (report) => {
     lines.push("");
   };
 
+  const statusEmoji = (status) => {
+    if (status === "OVERDUE") return "🟥";
+    if (status === "DUE") return "🟨";
+    return "🟩";
+  };
+
   const pushLabeledSubList = (label, items) => {
     lines.push(`• ${label}`);
     if (!items.length) {
@@ -171,10 +177,11 @@ export const formatReportForTeams = (report) => {
 
   (pm.trucks || []).forEach((item, i) => {
     if (!item?.truck) return;
+    const status = getTruckPmStatus(item, report.date);
     pmBlocks.push({
-      title: `🛻 ${bold(`Truck ${i + 1}:`)} ${item.truck}`,
+      title: `🛻 ${statusEmoji(status)} ${bold(`Truck ${i + 1}:`)} ${item.truck}`,
       rows: [
-        `${bold("Status:")} ${getTruckPmStatus(item, report.date)}`,
+        `${bold("Status:")} ${status}`,
         `${bold("Current Miles:")} ${item.miles || "—"}`,
         `${bold("Current Engine Hours:")} ${item.engineHours || "—"}`,
         `${bold("Miles Service Due At:")} ${item.dueAt || "—"}`,
@@ -186,10 +193,11 @@ export const formatReportForTeams = (report) => {
 
   (pm.tractors || []).forEach((item, i) => {
     if (!item?.tractor) return;
+    const status = getTractorPmStatus(item, report.date);
     pmBlocks.push({
-      title: `🚜 ${bold(`Tractor ${i + 1}:`)} ${item.tractor}`,
+      title: `🚜 ${statusEmoji(status)} ${bold(`Tractor ${i + 1}:`)} ${item.tractor}`,
       rows: [
-        `${bold("Status:")} ${getTractorPmStatus(item, report.date)}`,
+        `${bold("Status:")} ${status}`,
         `${bold("Current Miles:")} ${item.miles || "—"}`,
         `${bold("Current Hours:")} ${item.hours || "—"}`,
         `${bold("Miles Service Due At:")} ${item.dueAt || "—"}`,
@@ -201,10 +209,11 @@ export const formatReportForTeams = (report) => {
 
   (pm.pumps || []).forEach((item, i) => {
     if (!item?.pump) return;
+    const status = getPumpPmStatus(item);
     pmBlocks.push({
-      title: `🪛 ${bold(`Pump ${i + 1}:`)} ${item.pump}`,
+      title: `🪛 ${statusEmoji(status)} ${bold(`Pump ${i + 1}:`)} ${item.pump}`,
       rows: [
-        `${bold("Status:")} ${getPumpPmStatus(item)}`,
+        `${bold("Status:")} ${status}`,
         `${bold("Current Hours:")} ${item.hours || "—"}`,
         `${bold("Fuel / Air Filters Due At:")} ${item.fuelAirDue || "—"}`,
         `${bold("Oil Filters Due At:")} ${item.oilDue || "—"}`,
