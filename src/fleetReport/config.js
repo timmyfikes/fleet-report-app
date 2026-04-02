@@ -94,6 +94,17 @@ export const addActionButton = {
   cursor: "pointer",
 };
 
+export const removeActionButton = {
+  ...input,
+  width: "auto",
+  background: "#fee2e2",
+  border: "1px solid #fca5a5",
+  color: "#991b1b",
+  WebkitTextFillColor: "#991b1b",
+  fontWeight: 600,
+  cursor: "pointer",
+};
+
 export const getStatusColors = (status) => {
   if (status === "OK") return { background: "#dcfce7", border: "1px solid #86efac", color: "#166534" };
   if (status === "DUE") return { background: "#fef9c3", border: "1px solid #fde047", color: "#854d0e" };

@@ -8,6 +8,7 @@ import {
   label,
   NOTIFICATION_MS,
   addActionButton,
+  removeActionButton,
   notificationBase,
   notificationStyles,
   notificationStrip,
@@ -810,12 +811,12 @@ ${issueLines}`;
                         }}
                       />
                       {form.employees.dayAssistants.length > 1 ? (
-                        <button type="button" onClick={() => removeAssistant("day", i)} style={{ ...input, width: "auto", background: "#fee2e2", border: "1px solid #fca5a5", color: "#991b1b", WebkitTextFillColor: "#991b1b", fontWeight: 600, cursor: "pointer" }}>Remove</button>
+                        <button type="button" onClick={() => removeAssistant("day", i)} style={removeActionButton}>Remove</button>
                       ) : null}
                     </div>
                   ))}
                   {form.employees.dayAssistants.length < 6 ? (
-                    <button type="button" onClick={() => addAssistant("day")} style={{ ...input, width: "auto", background: "#eff6ff", border: "1px solid #93c5fd", color: "#1d4ed8", WebkitTextFillColor: "#1d4ed8", fontWeight: 600, cursor: "pointer" }}>+ Add Another Assistant</button>
+                    <button type="button" onClick={() => addAssistant("day")} style={addActionButton}>+ Add Another Assistant</button>
                   ) : null}
                 </div>
                 <div>
@@ -833,12 +834,12 @@ ${issueLines}`;
                         }}
                       />
                       {form.employees.nightAssistants.length > 1 ? (
-                        <button type="button" onClick={() => removeAssistant("night", i)} style={{ ...input, width: "auto", background: "#fee2e2", border: "1px solid #fca5a5", color: "#991b1b", WebkitTextFillColor: "#991b1b", fontWeight: 600, cursor: "pointer" }}>Remove</button>
+                        <button type="button" onClick={() => removeAssistant("night", i)} style={removeActionButton}>Remove</button>
                       ) : null}
                     </div>
                   ))}
                   {form.employees.nightAssistants.length < 6 ? (
-                    <button type="button" onClick={() => addAssistant("night")} style={{ ...input, width: "auto", background: "#eff6ff", border: "1px solid #93c5fd", color: "#1d4ed8", WebkitTextFillColor: "#1d4ed8", fontWeight: 600, cursor: "pointer" }}>+ Add Another Assistant</button>
+                    <button type="button" onClick={() => addAssistant("night")} style={addActionButton}>+ Add Another Assistant</button>
                   ) : null}
                 </div>
               </div>
@@ -861,12 +862,12 @@ ${issueLines}`;
                         />
                       </div>
                       {form.pumpUnits.length > 1 ? (
-                        <button type="button" onClick={() => removePumpUnit(i)} style={{ ...input, width: "auto", background: "#fee2e2", border: "1px solid #fca5a5", color: "#991b1b", WebkitTextFillColor: "#991b1b", fontWeight: 600, cursor: "pointer", padding: "10px 12px" }}>Remove</button>
+                        <button type="button" onClick={() => removePumpUnit(i)} style={removeActionButton}>Remove</button>
                       ) : null}
                     </div>
                   ))}
                   {form.pumpUnits.length < 10 ? (
-                    <button type="button" onClick={addPumpUnit} style={{ ...input, width: "auto", background: "#eff6ff", border: "1px solid #93c5fd", color: "#1d4ed8", WebkitTextFillColor: "#1d4ed8", fontWeight: 600, cursor: "pointer" }}>+ Add Another Pump</button>
+                    <button type="button" onClick={addPumpUnit} style={addActionButton}>+ Add Another Pump</button>
                   ) : null}
                 </div>
 
@@ -884,12 +885,12 @@ ${issueLines}`;
                         />
                       </div>
                       {form.tractors.length > 1 ? (
-                        <button type="button" onClick={() => removeTractorUnit(i)} style={{ ...input, width: "auto", background: "#fee2e2", border: "1px solid #fca5a5", color: "#991b1b", WebkitTextFillColor: "#991b1b", fontWeight: 600, cursor: "pointer", padding: "10px 12px" }}>Remove</button>
+                        <button type="button" onClick={() => removeTractorUnit(i)} style={removeActionButton}>Remove</button>
                       ) : null}
                     </div>
                   ))}
                   {form.tractors.length < 10 ? (
-                    <button type="button" onClick={addTractorUnit} style={{ ...input, width: "auto", background: "#eff6ff", border: "1px solid #93c5fd", color: "#1d4ed8", WebkitTextFillColor: "#1d4ed8", fontWeight: 600, cursor: "pointer" }}>+ Add Another Tractor</button>
+                    <button type="button" onClick={addTractorUnit} style={addActionButton}>+ Add Another Tractor</button>
                   ) : null}
                 </div>
 
@@ -909,7 +910,7 @@ ${issueLines}`;
                           ))}
                         </select>
                         {form.commandCenters.length > 1 ? (
-                          <button type="button" onClick={() => removeCommandCenter(i)} style={{ ...input, width: "auto", background: "#fee2e2", border: "1px solid #fca5a5", color: "#991b1b", WebkitTextFillColor: "#991b1b" }}>Remove</button>
+                          <button type="button" onClick={() => removeCommandCenter(i)} style={removeActionButton}>Remove</button>
                         ) : null}
                       </div>
                       {cc.unit ? (
@@ -935,7 +936,7 @@ ${issueLines}`;
                     </div>
                   ))}
                   {form.commandCenters.length < 2 ? (
-                    <button type="button" onClick={addCommandCenter} style={{ ...input, width: "auto", background: "#eff6ff", border: "1px solid #93c5fd", color: "#1d4ed8", WebkitTextFillColor: "#1d4ed8" }}>+ Add Another Command Center</button>
+                    <button type="button" onClick={addCommandCenter} style={addActionButton}>+ Add Another Command Center</button>
                   ) : null}
                 </div>
 
@@ -954,12 +955,12 @@ ${issueLines}`;
                       </select>
                       <input style={{ ...input, flex: 1 }} type="text" inputMode="numeric" pattern="[0-9]*" placeholder="Numbers only" value={unit.number} onChange={(e) => updateTrailer(i, "number", e.target.value)} />
                       {form.trailers.length > 1 ? (
-                        <button type="button" onClick={() => removeTrailer(i)} style={{ ...input, width: "auto", background: "#fee2e2", border: "1px solid #fca5a5", color: "#991b1b", WebkitTextFillColor: "#991b1b", fontWeight: 600, cursor: "pointer", padding: "10px 12px" }}>Remove</button>
+                        <button type="button" onClick={() => removeTrailer(i)} style={removeActionButton}>Remove</button>
                       ) : null}
                     </div>
                   ))}
                   {form.trailers.length < 10 ? (
-                    <button type="button" onClick={addTrailer} style={{ ...input, width: "auto", background: "#eff6ff", border: "1px solid #93c5fd", color: "#1d4ed8", WebkitTextFillColor: "#1d4ed8", fontWeight: 600, cursor: "pointer" }}>+ Add Another Trailer</button>
+                    <button type="button" onClick={addTrailer} style={addActionButton}>+ Add Another Trailer</button>
                   ) : null}
                 </div>
 
@@ -1021,13 +1022,13 @@ ${issueLines}`;
                           />
                         ) : null}
                         {form.dayTrucks.length > 1 ? (
-                          <button type="button" onClick={() => updateFleetForm(prev => ({ ...prev, dayTrucks: prev.dayTrucks.filter((_, idx) => idx !== i) }))} style={{ ...input, width: "auto", background: "#fee2e2", border: "1px solid #fca5a5", color: "#991b1b", WebkitTextFillColor: "#991b1b" }}>Remove</button>
+                          <button type="button" onClick={() => updateFleetForm(prev => ({ ...prev, dayTrucks: prev.dayTrucks.filter((_, idx) => idx !== i) }))} style={removeActionButton}>Remove</button>
                         ) : null}
                       </div>
                     );
                   })}
                   {form.dayTrucks.length < 3 ? (
-                    <button type="button" onClick={() => updateFleetForm(prev => ({ ...prev, dayTrucks: [...prev.dayTrucks, ""] }))} style={{ ...input, width: "auto", background: "#eff6ff", border: "1px solid #93c5fd", color: "#1d4ed8", WebkitTextFillColor: "#1d4ed8" }}>+ Add Another Truck</button>
+                    <button type="button" onClick={() => updateFleetForm(prev => ({ ...prev, dayTrucks: [...prev.dayTrucks, ""] }))} style={addActionButton}>+ Add Another Truck</button>
                   ) : null}
                 </div>
 
@@ -1066,13 +1067,13 @@ ${issueLines}`;
                           />
                         ) : null}
                         {form.nightTrucks.length > 1 ? (
-                          <button type="button" onClick={() => updateFleetForm((prev) => ({ ...prev, nightTrucks: prev.nightTrucks.filter((_, idx) => idx !== i) }))} style={{ ...input, width: "auto", background: "#fee2e2", border: "1px solid #fca5a5", color: "#991b1b", WebkitTextFillColor: "#991b1b" }}>Remove</button>
+                          <button type="button" onClick={() => updateFleetForm((prev) => ({ ...prev, nightTrucks: prev.nightTrucks.filter((_, idx) => idx !== i) }))} style={removeActionButton}>Remove</button>
                         ) : null}
                       </div>
                     );
                   })}
                   {form.nightTrucks.length < 3 ? (
-                    <button type="button" onClick={() => updateFleetForm((prev) => ({ ...prev, nightTrucks: [...prev.nightTrucks, ""] }))} style={{ ...input, width: "auto", background: "#eff6ff", border: "1px solid #93c5fd", color: "#1d4ed8", WebkitTextFillColor: "#1d4ed8" }}>+ Add Another Truck</button>
+                    <button type="button" onClick={() => updateFleetForm((prev) => ({ ...prev, nightTrucks: [...prev.nightTrucks, ""] }))} style={addActionButton}>+ Add Another Truck</button>
                   ) : null}
                 </div>
               </div>
@@ -1118,7 +1119,7 @@ ${issueLines}`;
                         <button
                           type="button"
                           onClick={() => updateFleetForm(prev => ({ ...prev, chemicalSkids: prev.chemicalSkids.filter((_, idx) => idx !== i) }))}
-                          style={{ ...input, width: "auto", background: "#fee2e2", border: "1px solid #fca5a5", color: "#991b1b", WebkitTextFillColor: "#991b1b" }}
+                          style={removeActionButton}
                         >
                           Remove
                         </button>
@@ -1130,7 +1131,7 @@ ${issueLines}`;
                   <button
                     type="button"
                     onClick={() => updateFleetForm(prev => ({ ...prev, chemicalSkids: [...prev.chemicalSkids, ""] }))}
-                    style={{ ...input, width: "auto", background: "#eff6ff", border: "1px solid #93c5fd", color: "#1d4ed8", WebkitTextFillColor: "#1d4ed8", marginTop: 6 }}
+                    style={{ ...addActionButton, marginTop: 6 }}
                   >
                     + Add Another Chem Add / Skid
                   </button>
@@ -1189,13 +1190,13 @@ ${issueLines}`;
                     </div>
                     {form.rentalEquipment.length > 1 ? (
                       <div style={{ marginTop: 10 }}>
-                        <button type="button" onClick={() => removeRentalEquipment(i)} style={{ ...input, width: "auto", background: "#fee2e2", border: "1px solid #fca5a5", color: "#991b1b", WebkitTextFillColor: "#991b1b", fontWeight: 600, cursor: "pointer" }}>Remove</button>
+                        <button type="button" onClick={() => removeRentalEquipment(i)} style={removeActionButton}>Remove</button>
                       </div>
                     ) : null}
                   </div>
                 ))}
                 {form.rentalEquipment.length < 10 ? (
-                  <button type="button" onClick={addRentalEquipment} style={{ ...input, width: "auto", background: "#eff6ff", border: "1px solid #93c5fd", color: "#1d4ed8", WebkitTextFillColor: "#1d4ed8", fontWeight: 600, cursor: "pointer" }}>+ Add Another Rental Item</button>
+                  <button type="button" onClick={addRentalEquipment} style={addActionButton}>+ Add Another Rental Item</button>
                 ) : null}
               </div>
             </div>
@@ -1439,7 +1440,7 @@ style={selectInput}
         <button
           type="button"
           onClick={() => removeAcidTransport(i)}
-          style={{ ...input, width: "auto", background: "#fee2e2", border: "1px solid #fca5a5", color: "#991b1b" }}
+          style={removeActionButton}
         >
           Remove
         </button>
@@ -1451,7 +1452,7 @@ style={selectInput}
     <button
       type="button"
       onClick={addAcidTransport}
-      style={{ ...input, width: "auto", background: "#eff6ff", border: "1px solid #93c5fd", color: "#1d4ed8", marginTop: 6 }}
+      style={{ ...addActionButton, marginTop: 6 }}
     >
       + Add Another Acid Transport
     </button>
@@ -1510,7 +1511,7 @@ style={selectInput}
                       <button
                         type="button"
                         onClick={() => removeChemical(i)}
-                        style={{ ...input, width: "auto", background: "#fee2e2", border: "1px solid #fca5a5", color: "#991b1b", WebkitTextFillColor: "#991b1b", fontWeight: 600, cursor: "pointer" }}
+                        style={removeActionButton}
                       >
                         Remove
                       </button>
@@ -1522,7 +1523,7 @@ style={selectInput}
                 <button
                   type="button"
                   onClick={addChemical}
-                  style={{ ...input, width: "auto", background: "#eff6ff", border: "1px solid #93c5fd", color: "#1d4ed8", WebkitTextFillColor: "#1d4ed8", fontWeight: 600, cursor: "pointer" }}
+                  style={addActionButton}
                 >
                   + Add Another Chemical
                 </button>
@@ -1584,7 +1585,7 @@ style={selectInput}
                       <button
                         type="button"
                         onClick={() => removeFuelEntry(i)}
-                        style={{ ...input, width: "auto", background: "#fee2e2", border: "1px solid #fca5a5", color: "#991b1b", WebkitTextFillColor: "#991b1b" }}
+                        style={removeActionButton}
                       >
                         Remove
                       </button>
@@ -1596,7 +1597,7 @@ style={selectInput}
                 <button
                   type="button"
                   onClick={addFuelEntry}
-                  style={{ ...input, width: "auto", background: "#eff6ff", border: "1px solid #93c5fd", color: "#1d4ed8", WebkitTextFillColor: "#1d4ed8" }}
+                  style={addActionButton}
                 >
                   + Add Another Fuel Entry
                 </button>
@@ -1733,7 +1734,7 @@ style={selectInput}
                 <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: isMobile ? "wrap" : "nowrap" }}>
                   <input style={{ ...input, flex: 1, minWidth: isMobile ? "100%" : 0 }} value={v} onChange={(e) => updateArray("partsNeeded", i, e.target.value)} />
                   {form.partsNeeded.length > 1 ? (
-                    <button type="button" onClick={() => removeTextEntry("partsNeeded", i)} style={{ ...input, width: isMobile ? "100%" : "auto", background: "#fee2e2", border: "1px solid #fca5a5", color: "#991b1b", WebkitTextFillColor: "#991b1b", fontWeight: 600, cursor: "pointer" }}>
+                    <button type="button" onClick={() => removeTextEntry("partsNeeded", i)} style={{ ...removeActionButton, width: isMobile ? "100%" : "auto" }}>
                       Remove
                     </button>
                   ) : null}
@@ -1752,7 +1753,7 @@ style={selectInput}
                 <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: isMobile ? "wrap" : "nowrap" }}>
                   <input style={{ ...input, flex: 1, minWidth: isMobile ? "100%" : 0 }} value={v} onChange={(e) => updateArray("issues", i, e.target.value)} />
                   {form.issues.length > 1 ? (
-                    <button type="button" onClick={() => removeTextEntry("issues", i)} style={{ ...input, width: isMobile ? "100%" : "auto", background: "#fee2e2", border: "1px solid #fca5a5", color: "#991b1b", WebkitTextFillColor: "#991b1b", fontWeight: 600, cursor: "pointer" }}>
+                    <button type="button" onClick={() => removeTextEntry("issues", i)} style={{ ...removeActionButton, width: isMobile ? "100%" : "auto" }}>
                       Remove
                     </button>
                   ) : null}
