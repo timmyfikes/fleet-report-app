@@ -11,6 +11,10 @@ if git diff --cached --quiet; then
 fi
 
 git commit -m "$message"
-git push
 
-echo "Checkpoint complete."
+if git push; then
+  echo "Checkpoint complete and pushed to origin."
+else
+  echo "Checkpoint committed locally, but push failed."
+  echo "Run 'git push' after authenticating to GitHub."
+fi
