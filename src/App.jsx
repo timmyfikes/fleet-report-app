@@ -1,517 +1,42 @@
-import React, { memo, useMemo, useState, useEffect, useCallback } from "react";
-import { createClient } from "@supabase/supabase-js";
-
-const input = {
-  width: "100%",
-  padding: "10px",
-  border: "1px solid #cbd5e1",
-  borderRadius: 10,
-  fontSize: 16,
-  boxSizing: "border-box",
-  background: "#ffffff",
-  color: "#111827",
-  colorScheme: "light",
-  WebkitTextFillColor: "#111827",
-  appearance: "none",
-};
-
-const selectInput = {
-  ...input,
-  paddingRight: 36,
-  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 20 20' fill='none'%3E%3Cpath d='M5 7.5L10 12.5L15 7.5' stroke='%23475569' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")`,
-  backgroundRepeat: "no-repeat",
-  backgroundPosition: "right 10px center",
-  backgroundSize: "14px",
-  cursor: "pointer",
-};
-
-const section = {
-  borderTop: "1px solid #d1d5db",
-  paddingTop: 18,
-  marginTop: 18,
-};
-
-const row = {
-  display: "grid",
-  gap: 12,
-  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-};
-
-const card = {
-  background: "#fff",
-  border: "1px solid #e5e7eb",
-  borderRadius: 18,
-  padding: 18,
-  boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
-};
-
-const label = {
-  display: "block",
-  fontWeight: 600,
-  marginBottom: 6,
-};
-
-const getStatusColors = (status) => {
-  if (status === "OK") return { background: "#dcfce7", border: "1px solid #86efac", color: "#166534" };
-  if (status === "DUE") return { background: "#fef9c3", border: "1px solid #fde047", color: "#854d0e" };
-  if (status === "OVERDUE") return { background: "#fee2e2", border: "1px solid #fca5a5", color: "#991b1b" };
-  return { background: "#fff", border: "1px solid #e5e7eb", color: "#111827" };
-};
-
-const toNumber = (value) => {
-  if (value === "" || value === null || value === undefined) return null;
-  const num = Number(value);
-  return Number.isFinite(num) ? num : null;
-};
-
-const isRealTruckUnit = (value) => typeof value === "string" && /^C-\d+$/.test(value);
-
-const getTruckPmStatus = (item, reportDate) => {
-  const currentMiles = toNumber(item.miles);
-  const dueMiles = toNumber(item.dueAt);
-  const currentHours = toNumber(item.engineHours);
-  const dueHours = toNumber(item.engineHoursDueAt);
-
-  const milesOverdue = currentMiles !== null && dueMiles !== null && currentMiles > dueMiles;
-  const hoursOverdue = currentHours !== null && dueHours !== null && currentHours > dueHours;
-
-  let qcStatus = "OK";
-  if (reportDate && item.qcDue) {
-    const report = new Date(`${reportDate}T00:00:00`);
-    const qcDue = new Date(`${item.qcDue}T00:00:00`);
-    const dayBeforeQc = new Date(qcDue);
-    dayBeforeQc.setDate(qcDue.getDate() - 1);
-
-    if (report > qcDue) {
-      qcStatus = "OVERDUE";
-    } else if (report >= dayBeforeQc) {
-      qcStatus = "DUE";
-    }
-  }
-
-  if (milesOverdue || hoursOverdue || qcStatus === "OVERDUE") return "OVERDUE";
-
-  const milesDue = currentMiles !== null && dueMiles !== null && currentMiles >= dueMiles - 250;
-  const hoursDue = currentHours !== null && dueHours !== null && currentHours >= dueHours - 15;
-  if (milesDue || hoursDue || qcStatus === "DUE") return "DUE";
-
-  return "OK";
-};
-
-const getTractorPmStatus = (item, reportDate) => {
-  const currentMiles = toNumber(item.miles);
-  const dueMiles = toNumber(item.dueAt);
-  const currentHours = toNumber(item.hours);
-  const dueHours = toNumber(item.hoursDueAt);
-
-  const milesOverdue = currentMiles !== null && dueMiles !== null && currentMiles > dueMiles;
-  const hoursOverdue = currentHours !== null && dueHours !== null && currentHours > dueHours;
-
-  let qcStatus = "OK";
-  if (reportDate && item.qcDue) {
-    const report = new Date(`${reportDate}T00:00:00`);
-    const qcDue = new Date(`${item.qcDue}T00:00:00`);
-    const dayBeforeQc = new Date(qcDue);
-    dayBeforeQc.setDate(qcDue.getDate() - 1);
-
-    if (report > qcDue) {
-      qcStatus = "OVERDUE";
-    } else if (report >= dayBeforeQc) {
-      qcStatus = "DUE";
-    }
-  }
-
-  if (milesOverdue || hoursOverdue || qcStatus === "OVERDUE") return "OVERDUE";
-
-  const milesDue = currentMiles !== null && dueMiles !== null && currentMiles >= dueMiles - 250;
-  const hoursDue = currentHours !== null && dueHours !== null && currentHours >= dueHours - 15;
-  if (milesDue || hoursDue || qcStatus === "DUE") return "DUE";
-
-  return "OK";
-};
-
-const getPumpPmStatus = (item) => {
-  const currentHours = toNumber(item.hours);
-  const fuelAirDue = toNumber(item.fuelAirDue);
-  const oilDue = toNumber(item.oilDue);
-  const pm1000Due = toNumber(item.pm1000Due);
-
-  const overdue = [fuelAirDue, oilDue, pm1000Due].some((due) => currentHours !== null && due !== null && currentHours > due);
-  if (overdue) return "OVERDUE";
-
-  const dueSoon = [fuelAirDue, oilDue, pm1000Due].some((due) => currentHours !== null && due !== null && currentHours >= due - 24);
-  if (dueSoon) return "DUE";
-
-  return "OK";
-};
-
-const getGeneratorPmStatus = (item) => {
-  const currentHours = toNumber(item.hours);
-  const dueHours = toNumber(item.dueAt);
-  if (currentHours !== null && dueHours !== null && currentHours > dueHours) return "OVERDUE";
-  if (currentHours !== null && dueHours !== null && currentHours >= dueHours - 24) return "DUE";
-  return "OK";
-};
-
-const blankRental = () => ({ unit: "", status: "Active", description: "", descriptionOther: "", rentedFrom: "", rentedFromOther: "" });
-const blankChemical = () => ({ chemical: "", chemicalOther: "", amount: "" });
-const blankTruckPm = () => ({ truck: "", miles: "", engineHours: "", dueAt: "", engineHoursDueAt: "", qcDue: "", status: "OK" });
-const blankTractorPm = () => ({ tractor: "", miles: "", hours: "", dueAt: "", hoursDueAt: "", qcDue: "", status: "OK" });
-const blankPumpPm = () => ({ pump: "", hours: "", fuelAirDue: "", oilDue: "", pm1000Due: "", status: "OK" });
-const blankFuelEntry = () => ({ tankUnit: "", trailer: "", strap: "" });
-const blankGeneratorPm = () => ({ unit: "", hours: "", dueAt: "", status: "OK" });
-
-const createInitialState = (fleet = "1") => ({
-  date: new Date().toISOString().slice(0, 10),
-  fleet,
-  shift: "Day",
-  employees: {
-    dayOperator: "",
-    dayAssistants: [""],
-    nightOperator: "",
-    nightAssistants: [""],
-  },
-  pumpUnits: [""],
-  tractors: [""],
-  commandCenters: [{ unit: "", starlink: "", radio: "" }],
-  trailers: [{ prefix: "C-", number: "" }],
-  ironPackage: '2"',
-  dayTrucks: [""],
-  nightTrucks: [""],
-  chemicalSkids: [""],
-  rentalEquipment: [blankRental()],
-  misc: {
-    bleedOff: "",
-    bleedOffSkid: "",
-    bleedOffValveManifold: "",
-    bleedOffValveManifoldUnit: "",
-    containments: "",
-    containmentCount: "",
-    restraints: "",
-    restraintsType: "",
-    ponyPump: "",
-  },
-  thirdParty: {
-    acidTransports: [{ provider: "", unit: "" }],
-  },
-  wsChemicals: [blankChemical()],
-  fuel: {
-    entries: [blankFuelEntry()],
-  },
-  pm: {
-    trucks: [blankTruckPm(), blankTruckPm()],
-    tractors: Array.from({ length: 10 }, () => blankTractorPm()),
-    pumps: Array.from({ length: 10 }, () => blankPumpPm()),
-    generators: [blankGeneratorPm(), blankGeneratorPm()],
-  },
-  partsNeeded: Array(10).fill(""),
-  issues: Array(10).fill(""),
-});
-
-const fleetTabs = ["1", "2", "3", "4", "5", "6", "7"];
-
-const PUMP_OPTIONS = [
-  ...Array.from({ length: 11 }, (_, idx) => `FPU-${String(idx + 1).padStart(3, "0")}`),
-  "DPU-001 (Roadside)",
-  "DPU-001 (Curbside)",
-  "LTC-2428",
-  "LTC-3113",
-  "LTC-0019",
-  "LTC-0036",
-  "LTC-3068",
-];
-
-const TRACTOR_OPTIONS = Array.from({ length: 21 }, (_, idx) => `RT-${String(idx + 5).padStart(2, "0")}`);
-
-const COMMAND_CENTER_OPTIONS = Array.from({ length: 7 }, (_, i) => `CT-${String(i + 1).padStart(3, "0")}`);
-
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-const supabase = supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null;
-
-const SearchableSelect = memo(function SearchableSelect({ value, onChange, options, placeholder }) {
-  const [isOpen, setIsOpen] = useState(false);
-
-  const filteredOptions = useMemo(() => {
-    const q = (value || "").toLowerCase().trim();
-    if (!q) return options;
-    return options.filter((option) => option.toLowerCase().includes(q));
-  }, [value, options]);
-
-  return (
-    <div style={{ position: "relative", marginBottom: 8 }}>
-      <input
-        style={{ ...input, paddingRight: 36 }}
-        placeholder={placeholder}
-        value={value}
-        onFocus={() => setIsOpen(true)}
-        onChange={(e) => {
-          onChange(e.target.value);
-          setIsOpen(true);
-        }}
-        onBlur={() => {
-          window.setTimeout(() => setIsOpen(false), 150);
-        }}
-      />
-      <div style={{ position: "absolute", right: 12, top: 11, color: "#475569", pointerEvents: "none", fontSize: 14 }}>▾</div>
-      {isOpen ? (
-        <div
-          style={{
-            position: "absolute",
-            top: "calc(100% + 4px)",
-            left: 0,
-            right: 0,
-            maxHeight: 180,
-            overflowY: "auto",
-            background: "#ffffff",
-            border: "1px solid #cbd5e1",
-            borderRadius: 10,
-            boxShadow: "0 8px 20px rgba(15, 23, 42, 0.12)",
-            zIndex: 20,
-          }}
-        >
-          {filteredOptions.length ? (
-            filteredOptions.map((option) => (
-              <button
-                key={option}
-                type="button"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => {
-                  onChange(option);
-                  setIsOpen(false);
-                }}
-                style={{
-                  display: "block",
-                  width: "100%",
-                  textAlign: "left",
-                  padding: "10px 12px",
-                  border: "none",
-                  background: "#ffffff",
-                  color: "#111827",
-                  cursor: "pointer",
-                }}
-              >
-                {option}
-              </button>
-            ))
-          ) : (
-            <div style={{ padding: "10px 12px", color: "#64748b" }}>No matches. Keep typing to enter a custom unit.</div>
-          )}
-        </div>
-      ) : null}
-    </div>
-  );
-});
-
-const SavedReportView = memo(function SavedReportView({ report }) {
-  if (!report) return null;
-
-  const renderPmCard = (title, item, keyName) => {
-    const status = keyName === "Truck"
-      ? getTruckPmStatus(item, report.date)
-      : keyName === "Tractor"
-        ? getTractorPmStatus(item, report.date)
-        : keyName === "Pump"
-          ? getPumpPmStatus(item)
-          : keyName === "Generator"
-            ? getGeneratorPmStatus(item)
-            : item.status;
-    const statusColors = getStatusColors(status);
-    return (
-      <div style={{ ...statusColors, padding: 10, borderRadius: 10, marginBottom: 8 }}>
-        <div style={{ fontWeight: 700, marginBottom: 6 }}>{title}</div>
-        <div><strong>{keyName}:</strong> {item[keyName.toLowerCase()] || "—"}</div>
-        {item.miles ? <div><strong>Current Miles:</strong> {item.miles}</div> : null}
-        {item.engineHours ? <div><strong>Current Engine Hours:</strong> {item.engineHours}</div> : null}
-        {item.hours ? <div><strong>Current Hours:</strong> {item.hours}</div> : null}
-        {item.dueAt ? <div><strong>Miles Service Due At:</strong> {item.dueAt}</div> : null}
-        {item.engineHoursDueAt ? <div><strong>Engine Hours Service Due At:</strong> {item.engineHoursDueAt}</div> : null}
-        {item.hoursDueAt ? <div><strong>Hours Service Due At:</strong> {item.hoursDueAt}</div> : null}
-        {item.qcDue ? <div><strong>QC Due Date:</strong> {item.qcDue}</div> : null}
-        {item.fuelAirDue ? <div><strong>Fuel / Air Filters Due At:</strong> {item.fuelAirDue}</div> : null}
-        {item.oilDue ? <div><strong>Oil Filters Due At:</strong> {item.oilDue}</div> : null}
-        {item.pm1000Due ? <div><strong>1000 HR PM Due At:</strong> {item.pm1000Due}</div> : null}
-        {keyName === "Generator" && item.dueAt ? <div><strong>Hours PM Due At:</strong> {item.dueAt}</div> : null}
-        <div><strong>Status:</strong> {status}</div>
-      </div>
-    );
-  };
-
-  return (
-    <div style={{ fontSize: 14, lineHeight: 1.6 }}>
-      <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 10 }}>🔧 END-OF-SHIFT INVENTORY & PM REPORT</div>
-      <div><strong>Date:</strong> {report.date}</div>
-      <div><strong>Fleet #:</strong> {report.fleet}</div>
-      <div><strong>Shift:</strong> {report.shift}</div>
-
-      <div style={{ marginTop: 12, fontWeight: 700 }}>Employees</div>
-      <div><strong>Day Shift Operator:</strong> {report.employees.dayOperator || "—"}</div>
-      <div><strong>Day Shift Assistants:</strong> {report.employees.dayAssistants?.filter(Boolean).join(", ") || "—"}</div>
-      <div><strong>Night Shift Operator:</strong> {report.employees.nightOperator || "—"}</div>
-      <div><strong>Night Shift Assistants:</strong> {report.employees.nightAssistants?.filter(Boolean).join(", ") || "—"}</div>
-
-      <div style={{ marginTop: 12, fontWeight: 700 }}>🚛 Equipment Inventory</div>
-      {report.pumpUnits.some(Boolean) ? (
-        <div><strong>Pump Units:</strong> {report.pumpUnits.filter(Boolean).join(", ")}</div>
-      ) : null}
-      {report.tractors.some(Boolean) ? (
-        <div><strong>Tractors:</strong> {report.tractors.filter(Boolean).join(", ")}</div>
-      ) : null}
-
-      {report.commandCenters?.some((cc) => cc?.unit) ? (
-        <div>
-          <strong>Command Centers:</strong>
-          {report.commandCenters.map((cc, i) => {
-            if (!cc?.unit) return null;
-            const details = [
-              cc.starlink ? `Starlink: ${cc.starlink}` : null,
-              cc.radio ? `Full Radio Set: ${cc.radio}` : null,
-            ].filter(Boolean).join(" | ");
-            return (
-              <div key={i} style={{ marginLeft: 8 }}>
-                • {cc.unit}{details ? ` (${details})` : ""}
-              </div>
-            );
-          })}
-        </div>
-      ) : null}
-
-      {report.trailers.some((t) => t.prefix || t.number) ? (
-        <div>
-          <strong>Support Trailers / Floats:</strong> {report.trailers
-            .map((unit) => `${unit.prefix || ""}${unit.number || ""}`)
-            .filter(Boolean)
-            .join(", ")}
-        </div>
-      ) : null}
-
-      {report.dayTrucks.some(isRealTruckUnit) ? (
-        <div><strong>Day Shift Truck(s):</strong> {report.dayTrucks.filter(isRealTruckUnit).join(", ")}</div>
-      ) : null}
-      {report.nightTrucks.some(isRealTruckUnit) ? (
-        <div><strong>Night Shift Truck(s):</strong> {report.nightTrucks.filter(isRealTruckUnit).join(", ")}</div>
-      ) : null}
-      {report.chemicalSkids.some(Boolean) ? (
-        <div><strong>Chem Add / Chemical Skid(s):</strong> {report.chemicalSkids.filter(Boolean).join(", ")}</div>
-      ) : null}
-
-      {report.rentalEquipment.some((item) => item.unit || item.description || item.rentedFrom) ? (
-        <>
-          <div style={{ marginTop: 12, fontWeight: 700 }}>Rental Equipment</div>
-          {report.rentalEquipment.map((item, i) => {
-            if (!(item.unit || item.description || item.rentedFrom)) return null;
-            return (
-              <div key={i} style={{ marginBottom: 6 }}>
-                <div><strong>Unit #:</strong> {item.unit || "—"} | <strong>Status:</strong> {item.status}</div>
-                <div><strong>Description:</strong> {item.description === "Other" ? (item.descriptionOther || "—") : (item.description || "—")}</div>
-                <div><strong>Rented From:</strong> {item.rentedFrom === "Other" ? (item.rentedFromOther || "—") : (item.rentedFrom || "—")}</div>
-              </div>
-            );
-          })}
-        </>
-      ) : null}
-
-      {(report.misc.bleedOffSkid || report.misc.bleedOffValveManifoldUnit || report.misc.containmentCount || report.misc.restraintsType) ? (
-        <>
-          <div style={{ marginTop: 12, fontWeight: 700 }}>⚠️ Miscellaneous Equipment</div>
-          {report.misc.bleedOffSkid ? <div><strong>Bleed Off Skid:</strong> {report.misc.bleedOffSkid}</div> : null}
-          {report.misc.bleedOffValveManifoldUnit ? <div><strong>Bleed Off Valve Manifold Unit:</strong> {report.misc.bleedOffValveManifoldUnit}</div> : null}
-          {report.misc.containmentCount ? <div><strong># of Containments:</strong> {report.misc.containmentCount}</div> : null}
-          {report.misc.restraintsType ? <div><strong>Restraint Type:</strong> {report.misc.restraintsType}</div> : null}
-          {report.misc.ponyPump === "Yes" ? <div><strong>Hydraulic Pony Pump:</strong> Yes</div> : null}
-        </>
-      ) : null}
-
-      {report.thirdParty.acidTransports?.some(t => t.provider || t.unit) ? (
-        <>
-          <div style={{ marginTop: 12, fontWeight: 700 }}>🧪 Acid Equipment</div>
-          {report.thirdParty.acidTransports.map((t, i) => {
-            if (!(t.provider || t.unit)) return null;
-            return (
-              <div key={i}>
-                <strong>Provider:</strong> {t.provider || "—"} | <strong>Unit:</strong> {t.unit || "—"}
-              </div>
-            );
-          })}
-        </>
-      ) : null}
-
-      {report.wsChemicals.some((item) => item.chemical || item.amount) ? (
-        <>
-          <div style={{ marginTop: 12, fontWeight: 700 }}>🧪 WS Chemicals On Hand</div>
-          {report.wsChemicals.map((item, i) => {
-            if (!(item.chemical || item.amount)) return null;
-            return <div key={i}>• {item.chemical === "Other" ? (item.chemicalOther || "—") : (item.chemical || "—")} | Amount: {item.amount ? `${item.amount} gallons` : "—"}</div>;
-          })}
-        </>
-      ) : null}
-
-      {report.fuel.entries?.some((entry) => entry.tankUnit || entry.trailer || entry.strap) ? (
-        <>
-          <div style={{ marginTop: 12, fontWeight: 700 }}>⛽ Fuel Status</div>
-          {report.fuel.entries.map((entry, i) => {
-            if (!(entry.tankUnit || entry.trailer || entry.strap)) return null;
-            return (
-              <div key={i} style={{ marginBottom: 6 }}>
-                {(entry.tankUnit || entry.trailer) ? (
-                  <div>
-                    {entry.tankUnit ? <><strong>Tank Unit #:</strong> {entry.tankUnit}</> : null}
-                    {entry.tankUnit && entry.trailer ? " | " : null}
-                    {entry.trailer ? <><strong>Trailer #:</strong> {entry.trailer}</> : null}
-                  </div>
-                ) : null}
-                {entry.strap ? <div><strong>Fuel Strap Reading:</strong> {entry.strap} inches</div> : null}
-              </div>
-            );
-          })}
-        </>
-      ) : null}
-
-      <div style={{ marginTop: 12, fontWeight: 700 }}>🛠 Scheduled Maintenance (PM Status)</div>
-      <div style={{ marginTop: 8, fontWeight: 700 }}>🛻 Trucks</div>
-      {report.pm.trucks.some((item) => item.truck)
-        ? report.pm.trucks.map((item, i) => {
-            if (!item.truck) return null;
-            return <div key={i}>{renderPmCard(`Truck ${i + 1}`, item, "Truck")}</div>;
-          })
-        : <div>—</div>}
-
-      <div style={{ marginTop: 8, fontWeight: 700 }}>🚜 Tractors</div>
-      {report.pm.tractors.some((item) => item.tractor)
-        ? report.pm.tractors.map((item, i) => {
-            if (!item.tractor) return null;
-            return <div key={i}>{renderPmCard(`Tractor ${i + 1}`, item, "Tractor")}</div>;
-          })
-        : <div>—</div>}
-
-      <div style={{ marginTop: 8, fontWeight: 700 }}>🪛 Pumps</div>
-      {report.pm.pumps.some((item) => item.pump)
-        ? report.pm.pumps.map((item, i) => {
-            if (!item.pump) return null;
-            return <div key={i}>{renderPmCard(`Pump ${i + 1}`, item, "Pump")}</div>;
-          })
-        : <div>—</div>}
-
-      <div style={{ marginTop: 8, fontWeight: 700 }}>⚡ Generators</div>
-      {report.pm.generators?.some((item) => item.unit)
-        ? report.pm.generators.map((item, i) => {
-            if (!item.unit) return null;
-            return <div key={i}>{renderPmCard(`Generator ${i + 1}`, item, "Generator")}</div>;
-          })
-        : <div>—</div>}
-
-      <div style={{ marginTop: 12, fontWeight: 700 }}>🛢️ Oil / Parts / Supplies Needed</div>
-      {report.partsNeeded.some(Boolean)
-        ? report.partsNeeded.filter(Boolean).map((item, i) => <div key={i}>• {item}</div>)
-        : <div>—</div>}
-
-      <div style={{ marginTop: 12, fontWeight: 700 }}>⚠️ Issues / Notes / Follow-Ups</div>
-      {report.issues.some(Boolean)
-        ? report.issues.filter(Boolean).map((item, i) => <div key={i}>• {item}</div>)
-        : <div>—</div>}
-    </div>
-  );
-});
+import React, { useMemo, useState, useEffect, useCallback } from "react";
+import {
+  input,
+  selectInput,
+  section,
+  row,
+  card,
+  label,
+  NOTIFICATION_MS,
+  addActionButton,
+  notificationBase,
+  notificationStyles,
+  notificationStrip,
+  getStatusColors,
+  getTruckPmStatus,
+  getTractorPmStatus,
+  getPumpPmStatus,
+  getGeneratorPmStatus,
+  blankGeneratorPm,
+  blankPumpPm,
+  blankTractorPm,
+  blankFuelEntry,
+  blankChemical,
+  blankRental,
+  buildFleetStateFromDraft,
+  loadFleetDraft,
+  getFleetDraftKey,
+  fleetTabs,
+  PUMP_OPTIONS,
+  TRACTOR_OPTIONS,
+  COMMAND_CENTER_OPTIONS,
+  supabase,
+  isRealTruckUnit,
+  toNameCase,
+} from "./fleetReport/config";
+import { SearchableSelect } from "./fleetReport/SearchableSelect";
+import { SavedReportView } from "./fleetReport/SavedReportView";
+import { formatReportForTeams } from "./fleetReport/formatReportForTeams";
+import wsEnergyLogo from "./assets/ws_energy_svcs_logo.jpeg";
 
 export default function FleetReportApp() {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
@@ -524,7 +49,7 @@ export default function FleetReportApp() {
   const [activeFleet, setActiveFleet] = useState("1");
   const [fleetForms, setFleetForms] = useState(() =>
     fleetTabs.reduce((acc, fleet) => {
-      acc[fleet] = createInitialState(fleet);
+      acc[fleet] = buildFleetStateFromDraft(fleet);
       return acc;
     }, {})
   );
@@ -538,9 +63,13 @@ export default function FleetReportApp() {
   const [unitMessage, setUnitMessage] = useState("");
 
   const [deletePassword, setDeletePassword] = useState("");
-  const [deleteMessage, setDeleteMessage] = useState("");
   const [deleteTargetId, setDeleteTargetId] = useState(null);
+  const [deleteUnlocked, setDeleteUnlocked] = useState(false);
+  const [showDeleteAccessPrompt, setShowDeleteAccessPrompt] = useState(false);
   const [selectedReport, setSelectedReport] = useState(null);
+  const [showHelp, setShowHelp] = useState(false);
+  const [showPmValidation, setShowPmValidation] = useState(false);
+  const [copyMessage, setCopyMessage] = useState("");
 
   const form = fleetForms[activeFleet];
 
@@ -575,12 +104,34 @@ export default function FleetReportApp() {
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchSavedReports();
   }, [fetchSavedReports]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const timeoutId = window.setTimeout(() => {
+      Object.entries(fleetForms).forEach(([fleet, data]) => {
+        try {
+          window.localStorage.setItem(getFleetDraftKey(fleet), JSON.stringify(data));
+        } catch (error) {
+          console.error(`Unable to save local draft for fleet ${fleet}`, error);
+        }
+      });
+    }, 300);
+    return () => window.clearTimeout(timeoutId);
+  }, [fleetForms]);
+
   const visibleSavedReports = useMemo(
     () => savedReports.filter((report) => String(report.fleet) === String(activeFleet)),
     [savedReports, activeFleet]
   );
+
+  const resolvedSelectedReport = useMemo(() => {
+    if (selectedReport) return selectedReport;
+    const latestForActiveFleet = savedReports.find((report) => String(report.fleet) === String(activeFleet));
+    return latestForActiveFleet || savedReports[0] || null;
+  }, [selectedReport, savedReports, activeFleet]);
 
   const updateFleetForm = useCallback((updater) => {
     setFleetForms((prev) => ({
@@ -609,7 +160,7 @@ export default function FleetReportApp() {
 
       if (isDuplicatePump || isDuplicateTractor || isDuplicateDayTruck || isDuplicateNightTruck) {
         setUnitMessage(`${value} is already selected on this report`);
-        setTimeout(() => setUnitMessage(""), 2500);
+        setTimeout(() => setUnitMessage(""), NOTIFICATION_MS);
         return prev;
       }
 
@@ -646,7 +197,7 @@ export default function FleetReportApp() {
     });
   };
 
-  const updateEmployee = (key, value) => updateFleetForm((prev) => ({ ...prev, employees: { ...prev.employees, [key]: value } }));
+  const updateEmployee = (key, value) => updateFleetForm((prev) => ({ ...prev, employees: { ...prev.employees, [key]: toNameCase(value) } }));
 
   const updateCommandCenter = (index, key, value) => {
     updateFleetForm((prev) => {
@@ -826,7 +377,7 @@ export default function FleetReportApp() {
         ...prev,
         thirdParty: {
           ...prev.thirdParty,
-          acidTransports: [...prev.thirdParty.acidTransports, { provider: "", unit: "" }],
+          acidTransports: [...prev.thirdParty.acidTransports, { provider: "", unit: "", strap: "" }],
         },
       };
     });
@@ -850,6 +401,22 @@ export default function FleetReportApp() {
       const nextGroup = [...prev.pm[group]];
       nextGroup[index] = { ...nextGroup[index], [key]: value };
       return { ...prev, pm: { ...prev.pm, [group]: nextGroup } };
+    });
+  };
+
+  const addTextEntry = (key) => {
+    updateFleetForm((prev) => {
+      const list = Array.isArray(prev[key]) ? prev[key] : [""];
+      if (list.length >= 10) return prev;
+      return { ...prev, [key]: [...list, ""] };
+    });
+  };
+
+  const removeTextEntry = (key, index) => {
+    updateFleetForm((prev) => {
+      const list = Array.isArray(prev[key]) ? prev[key] : [""];
+      if (list.length <= 1) return prev;
+      return { ...prev, [key]: list.filter((_, i) => i !== index) };
     });
   };
 
@@ -902,22 +469,24 @@ Support Trailers / Floats:
 ${trailerLines}
 
 Iron Package: ${form.ironPackage}
+Iron Package Source: ${form.ironPackageSource || "—"}
 
 Issues / Notes / Follow-Ups:
 ${issueLines}`;
   }, [form]);
 
-  const getPmValidationErrors = (currentForm) => {
+  const getPmValidationDetails = useCallback((currentForm) => {
     const errors = [];
+    const missingFieldIds = new Set();
 
     currentForm.pumpUnits.forEach((unit, i) => {
       if (!unit) return;
       const pm = currentForm.pm.pumps[i] || {};
       const missing = [];
-      if (!pm.hours) missing.push("Current Hours");
-      if (!pm.fuelAirDue) missing.push("Fuel / Air Filters Due At");
-      if (!pm.oilDue) missing.push("Oil Filters Due At");
-      if (!pm.pm1000Due) missing.push("1000 HR PM Due At");
+      if (!pm.hours) { missing.push("Current Hours"); missingFieldIds.add(`pm-pumps-${i}-hours`); }
+      if (!pm.fuelAirDue) { missing.push("Fuel / Air Filters Due At"); missingFieldIds.add(`pm-pumps-${i}-fuelAirDue`); }
+      if (!pm.oilDue) { missing.push("Oil Filters Due At"); missingFieldIds.add(`pm-pumps-${i}-oilDue`); }
+      if (!pm.pm1000Due) { missing.push("1000 HR PM Due At"); missingFieldIds.add(`pm-pumps-${i}-pm1000Due`); }
       if (missing.length) errors.push(`${unit}: ${missing.join(", ")}`);
     });
 
@@ -925,27 +494,27 @@ ${issueLines}`;
       if (!unit) return;
       const pm = currentForm.pm.tractors[i] || {};
       const missing = [];
-      if (!pm.miles) missing.push("Current Miles");
-      if (!pm.hours) missing.push("Current Hours");
-      if (!pm.dueAt) missing.push("Miles Service Due At");
-      if (!pm.hoursDueAt) missing.push("Hours Service Due At");
-      if (!pm.qcDue) missing.push("QC Due Date");
+      if (!pm.miles) { missing.push("Current Miles"); missingFieldIds.add(`pm-tractors-${i}-miles`); }
+      if (!pm.hours) { missing.push("Current Hours"); missingFieldIds.add(`pm-tractors-${i}-hours`); }
+      if (!pm.dueAt) { missing.push("Miles Service Due At"); missingFieldIds.add(`pm-tractors-${i}-dueAt`); }
+      if (!pm.hoursDueAt) { missing.push("Hours Service Due At"); missingFieldIds.add(`pm-tractors-${i}-hoursDueAt`); }
+      if (!pm.qcDue) { missing.push("QC Due Date"); missingFieldIds.add(`pm-tractors-${i}-qcDue`); }
       if (missing.length) errors.push(`${unit}: ${missing.join(", ")}`);
     });
 
     const truckChecks = [
-      { unit: currentForm.dayTrucks[0], pm: currentForm.pm.trucks[0] || {} },
-      { unit: currentForm.nightTrucks[0], pm: currentForm.pm.trucks[1] || {} },
+      { unit: currentForm.dayTrucks[0], pm: currentForm.pm.trucks[0] || {}, index: 0 },
+      { unit: currentForm.nightTrucks[0], pm: currentForm.pm.trucks[1] || {}, index: 1 },
     ];
 
-    truckChecks.forEach(({ unit, pm }) => {
+    truckChecks.forEach(({ unit, pm, index }) => {
       if (!isRealTruckUnit(unit)) return;
       const missing = [];
-      if (!pm.miles) missing.push("Current Miles");
-      if (!pm.engineHours) missing.push("Current Engine Hours");
-      if (!pm.dueAt) missing.push("Miles Service Due At");
-      if (!pm.engineHoursDueAt) missing.push("Engine Hours Service Due At");
-      if (!pm.qcDue) missing.push("QC Due Date");
+      if (!pm.miles) { missing.push("Current Miles"); missingFieldIds.add(`pm-trucks-${index}-miles`); }
+      if (!pm.engineHours) { missing.push("Current Engine Hours"); missingFieldIds.add(`pm-trucks-${index}-engineHours`); }
+      if (!pm.dueAt) { missing.push("Miles Service Due At"); missingFieldIds.add(`pm-trucks-${index}-dueAt`); }
+      if (!pm.engineHoursDueAt) { missing.push("Engine Hours Service Due At"); missingFieldIds.add(`pm-trucks-${index}-engineHoursDueAt`); }
+      if (!pm.qcDue) { missing.push("QC Due Date"); missingFieldIds.add(`pm-trucks-${index}-qcDue`); }
       if (missing.length) errors.push(`${unit}: ${missing.join(", ")}`);
     });
 
@@ -955,29 +524,63 @@ ${issueLines}`;
     generatorUnits.forEach((unit, i) => {
       const pm = currentForm.pm.generators[i] || {};
       const missing = [];
-      if (!pm.hours) missing.push("Current Hours");
-      if (!pm.dueAt) missing.push("Hours PM Due At");
+      if (!pm.hours) { missing.push("Current Hours"); missingFieldIds.add(`pm-generators-${i}-hours`); }
+      if (!pm.dueAt) { missing.push("Hours PM Due At"); missingFieldIds.add(`pm-generators-${i}-dueAt`); }
       if (missing.length) errors.push(`${unit} Generator: ${missing.join(", ")}`);
     });
 
-    return errors;
-  };
+    return { errors, missingFieldIds };
+  }, []);
+
+  const pmValidationDetails = useMemo(() => getPmValidationDetails(form), [form, getPmValidationDetails]);
+  const isPmFieldMissing = useCallback(
+    (fieldId) => showPmValidation && pmValidationDetails.missingFieldIds.has(fieldId),
+    [showPmValidation, pmValidationDetails]
+  );
+
+  const getPmLabelStyle = useCallback(
+    (fieldId) => (isPmFieldMissing(fieldId) ? { ...label, color: "#b91c1c" } : label),
+    [isPmFieldMissing]
+  );
+
+  const getPmInputStyle = useCallback(
+    (fieldId, baseStyle = input) => (isPmFieldMissing(fieldId) ? { ...baseStyle, border: "2px solid #ef4444", background: "#fff1f2" } : baseStyle),
+    [isPmFieldMissing]
+  );
+
+  const getPmRequiredSuffix = useCallback(
+    (fieldId) => (isPmFieldMissing(fieldId) ? " *" : ""),
+    [isPmFieldMissing]
+  );
+
+  const jumpToPmField = useCallback((fieldId) => {
+    if (typeof document === "undefined" || !fieldId) return;
+    const el = document.getElementById(fieldId);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    window.setTimeout(() => {
+      if (typeof el.focus === "function") el.focus();
+    }, 250);
+  }, []);
 
   const saveReport = async () => {
   if (isSaving) return;
 
-  const pmErrors = getPmValidationErrors(form);
+  const pmErrors = pmValidationDetails.errors;
   if (pmErrors.length) {
+    setShowPmValidation(true);
     setSaveMessageType("error");
     setSaveMessage(`Complete PM before saving: ${pmErrors[0]}`);
-    setTimeout(() => setSaveMessage(""), 3500);
+    const firstMissing = [...pmValidationDetails.missingFieldIds][0];
+    jumpToPmField(firstMissing);
+    setTimeout(() => setSaveMessage(""), NOTIFICATION_MS);
     return;
   }
 
   if (!supabase) {
     setSaveMessageType("error");
     setSaveMessage("Supabase is not connected");
-    setTimeout(() => setSaveMessage(""), 3500);
+    setTimeout(() => setSaveMessage(""), NOTIFICATION_MS);
     return;
   }
 
@@ -991,50 +594,95 @@ ${issueLines}`;
     report_data: form,
   };
 
-  const { error } = await supabase.from("reports").insert(payload);
+  const { data: insertedRow, error } = await supabase
+    .from("reports")
+    .insert(payload)
+    .select("id, fleet, report_date, shift, report_data, created_at")
+    .single();
 
   if (error) {
     console.error(error);
     setSaveMessageType("error");
     setSaveMessage("Save failed");
     setIsSaving(false);
-    setTimeout(() => setSaveMessage(""), 3500);
+    setTimeout(() => setSaveMessage(""), NOTIFICATION_MS);
     return;
   }
 
+  if (insertedRow) {
+    const normalizedInserted = {
+      id: insertedRow.id,
+      ...insertedRow.report_data,
+      fleet: String(insertedRow.fleet ?? insertedRow.report_data?.fleet ?? ""),
+      date: insertedRow.report_date ?? insertedRow.report_data?.date ?? "",
+      shift: insertedRow.shift ?? insertedRow.report_data?.shift ?? "Day",
+    };
+    setSelectedReport(normalizedInserted);
+  }
+
   await fetchSavedReports();
+  setShowPmValidation(false);
   setSaveMessage("Report Saved ✅");
 
   setTimeout(() => {
     setIsSaving(false);
     setSaveMessage("");
-  }, 2000);
+  }, NOTIFICATION_MS);
 };
 
   const loadLastReport = () => {
     const lastForFleet = savedReports.find((report) => String(report.fleet) === String(activeFleet));
-    if (!lastForFleet) return;
-    updateFleetForm(() => ({ ...lastForFleet, id: undefined, date: new Date().toISOString().slice(0, 10), fleet: activeFleet }));
-    setLoadMessage("Last Report Loaded ✅");
-    setTimeout(() => setLoadMessage(""), 2000);
+    if (lastForFleet) {
+      updateFleetForm(() => ({ ...lastForFleet, id: undefined, date: new Date().toISOString().slice(0, 10), fleet: activeFleet }));
+      setShowPmValidation(false);
+      setLoadMessage("Last Report Loaded ✅");
+      setTimeout(() => setLoadMessage(""), NOTIFICATION_MS);
+      return;
+    }
+
+    const localDraft = loadFleetDraft(activeFleet);
+    if (!localDraft) return;
+    updateFleetForm(() => ({ ...buildFleetStateFromDraft(activeFleet), ...localDraft, fleet: activeFleet }));
+    setShowPmValidation(false);
+    setLoadMessage("Local Draft Loaded ✅");
+    setTimeout(() => setLoadMessage(""), NOTIFICATION_MS);
   };
 
-  const copySummary = async () => {
+  const copyReportForTeams = useCallback(async () => {
+    if (!resolvedSelectedReport) return;
+
+    const text = formatReportForTeams(resolvedSelectedReport);
+    let copied = false;
+
     try {
-      await navigator.clipboard.writeText(summary);
-    } catch (e) {
-      console.error(e);
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        copied = true;
+      }
+    } catch {
+      copied = false;
     }
-  };
+
+    if (!copied) {
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.setAttribute("readonly", "true");
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.select();
+      copied = document.execCommand("copy");
+      document.body.removeChild(textarea);
+    }
+
+    setCopyMessage(copied ? "Copied for Microsoft Teams ✅" : "Unable to copy report");
+    setTimeout(() => setCopyMessage(""), NOTIFICATION_MS);
+  }, [resolvedSelectedReport]);
 
   const deleteReport = async (reportId) => {
-  if (deletePassword !== "1775") {
-    setDeleteMessage("Wrong password");
-    return;
-  }
+  if (!deleteUnlocked) return;
 
   if (!supabase) {
-    setDeleteMessage("Supabase is not connected");
     return;
   }
 
@@ -1042,35 +690,48 @@ ${issueLines}`;
 
   if (error) {
     console.error(error);
-    setDeleteMessage("Delete failed");
     return;
   }
 
   await fetchSavedReports();
 
-  if (selectedReport?.id === reportId) setSelectedReport(null);
-
-  setDeleteMessage("Report deleted");
-  setDeletePassword("");
+  if (resolvedSelectedReport?.id === reportId) setSelectedReport(null);
   setDeleteTargetId(null);
 };
 
   const openDeletePrompt = (reportId) => {
     setDeleteTargetId(reportId);
-    setDeletePassword("");
-    setDeleteMessage("");
   };
 
   const cancelDeletePrompt = () => {
     setDeleteTargetId(null);
+  };
+
+  const openDeleteAccessPrompt = () => {
+    setShowDeleteAccessPrompt(true);
+    setDeleteTargetId(null);
     setDeletePassword("");
-    setDeleteMessage("");
+  };
+
+  const cancelDeleteAccessPrompt = () => {
+    setShowDeleteAccessPrompt(false);
+    setDeletePassword("");
+  };
+
+  const confirmDeleteAccess = () => {
+    if (deletePassword !== "1775") {
+      setDeletePassword("");
+      return;
+    }
+    setDeleteUnlocked(true);
+    setShowDeleteAccessPrompt(false);
+    setDeletePassword("");
   };
 
   const viewSavedReport = useCallback((report) => {
     setSelectedReport(report);
     setViewMessage("Viewing Report 👁️");
-    setTimeout(() => setViewMessage(""), 2000);
+    setTimeout(() => setViewMessage(""), NOTIFICATION_MS);
   }, []);
 
   const loadSavedReport = useCallback((report) => {
@@ -1079,16 +740,38 @@ ${issueLines}`;
       ...prev,
       [String(report.fleet)]: { ...report, id: undefined },
     }));
+    setShowPmValidation(false);
     setSelectedReport(null);
     setLoadMessage("Report Loaded ✅");
-    setTimeout(() => setLoadMessage(""), 2000);
+    setTimeout(() => setLoadMessage(""), NOTIFICATION_MS);
   }, []);
 
   return (
-    <div style={{ background: "#f8fafc", minHeight: "100vh", padding: 16, colorScheme: "light", color: "#111827" }}>
-      <div style={{ maxWidth: 1050, margin: "0 auto" }}>
-        <div style={{ ...card, marginBottom: 16 }}>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
+    <div style={{ background: "linear-gradient(180deg, #f3f7fc 0%, #f8fafc 45%, #f8fafc 100%)", minHeight: "100vh", padding: isMobile ? 12 : 18, colorScheme: "light", color: "#111827" }}>
+      <div style={{ maxWidth: 1140, margin: "0 auto" }}>
+        <div style={{ ...card, marginBottom: 16, position: "relative" }}>
+          <button
+            type="button"
+            onClick={() => setShowHelp(true)}
+            style={{
+              position: "absolute",
+              top: 14,
+              right: 14,
+              ...input,
+              width: "auto",
+              padding: "8px 12px",
+              background: "#eff6ff",
+              border: "1px solid #93c5fd",
+              color: "#1d4ed8",
+              WebkitTextFillColor: "#1d4ed8",
+              fontWeight: 700,
+              fontSize: 13,
+              cursor: "pointer",
+            }}
+          >
+            Help
+          </button>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14, justifyContent: "center" }}>
             {fleetTabs.map((fleet) => (
               <button
                 key={fleet}
@@ -1108,10 +791,23 @@ ${issueLines}`;
               </button>
             ))}
           </div>
-          <div>
-            <h1 style={{ margin: 0, fontSize: 28 }}>🔧 END-OF-SHIFT INVENTORY & PM REPORT</h1>
+          <div style={{ textAlign: "center" }}>
+            <img
+              src={wsEnergyLogo}
+              alt="WS Energy Services logo"
+              style={{
+                width: isMobile ? 130 : 190,
+                height: "auto",
+                display: "block",
+                margin: "0 auto 10px",
+                objectFit: "contain",
+              }}
+            />
+            <h1 style={{ margin: 0, fontSize: isMobile ? 22 : 30, lineHeight: 1.2, color: "#111827", WebkitTextFillColor: "#111827" }}>
+              🔧 END-OF-SHIFT INVENTORY & PM REPORT
+            </h1>
           </div>
-          <p style={{ color: "#475569", marginBottom: 6 }}>
+          <p style={{ color: "#475569", margin: "10px auto 0", maxWidth: 840, lineHeight: 1.5, textAlign: "center" }}>
             Only fill in the sections that apply. Please ensure all equipment on location is added. Fill it out once, then use Load Last Report and only change what changed.
           </p>
           
@@ -1154,7 +850,7 @@ ${issueLines}`;
                         value={v}
                         onChange={(e) => {
                           const next = [...form.employees.dayAssistants];
-                          next[i] = e.target.value;
+                          next[i] = toNameCase(e.target.value);
                           updateFleetForm((prev) => ({ ...prev, employees: { ...prev.employees, dayAssistants: next } }));
                         }}
                       />
@@ -1177,7 +873,7 @@ ${issueLines}`;
                         value={v}
                         onChange={(e) => {
                           const next = [...form.employees.nightAssistants];
-                          next[i] = e.target.value;
+                          next[i] = toNameCase(e.target.value);
                           updateFleetForm((prev) => ({ ...prev, employees: { ...prev.employees, nightAssistants: next } }));
                         }}
                       />
@@ -1308,6 +1004,27 @@ ${issueLines}`;
                   {form.trailers.length < 10 ? (
                     <button type="button" onClick={addTrailer} style={{ ...input, width: "auto", background: "#eff6ff", border: "1px solid #93c5fd", color: "#1d4ed8", WebkitTextFillColor: "#1d4ed8", fontWeight: 600, cursor: "pointer" }}>+ Add Another Trailer</button>
                   ) : null}
+                </div>
+
+                <div style={{ gridColumn: "1 / -1" }}>
+                  <label style={label}>🔩 Iron Package</label>
+                  <div style={{ display: "grid", gap: 8, gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr" }}>
+                    <div>
+                      <label style={label}>Size</label>
+                      <select style={selectInput} value={form.ironPackage || '2"'} onChange={(e) => updateField("ironPackage", e.target.value)}>
+                        <option value={'2"'}>2"</option>
+                        <option value={'3"'}>3"</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label style={label}>Type</label>
+                      <select style={selectInput} value={form.ironPackageSource || ""} onChange={(e) => updateField("ironPackageSource", e.target.value)}>
+                        <option value="">Select</option>
+                        <option value="WS Owned">WS Owned</option>
+                        <option value="Rental">Rental</option>
+                      </select>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -1481,6 +1198,7 @@ ${issueLines}`;
                         <option value="Equipment Share">Equipment Share</option>
                         <option value="National T&E">National T&E</option>
                         <option value="Kar Equipment">Kar Equipment</option>
+                        <option value="Tiger Industrial">Tiger Industrial</option>
                         <option value="Other">Other</option>
                       </select>
                       {item.rentedFrom === "Other" ? (
@@ -1698,6 +1416,19 @@ style={selectInput}
       </select>
     </div>
 
+    <div style={{ marginTop: 12 }}>
+      <label style={label}>WS Fuel Cube?</label>
+      <select
+style={selectInput}
+        value={form.misc.fuelCube}
+        onChange={(e) => updateNested("misc", "fuelCube", e.target.value)}
+      >
+        <option value="">Select</option>
+        <option value="Yes">Yes</option>
+        <option value="No">No</option>
+      </select>
+    </div>
+
   </div>
 </div>
 
@@ -1727,6 +1458,22 @@ style={selectInput}
           style={input}
           value={item.unit}
           onChange={(e) => updateAcidTransport(i, "unit", e.target.value)}
+        />
+      </div>
+
+      <div style={{ flex: 1 }}>
+        <label style={label}>Current Strap (inches)</label>
+        <input
+          style={input}
+          type="text"
+          inputMode="decimal"
+          placeholder="e.g. 12.5"
+          value={item.strap || ""}
+          onChange={(e) => {
+            const clean = e.target.value.replace(/[^0-9.]/g, "");
+            const valid = clean.split(".").length <= 2 ? clean : item.strap;
+            updateAcidTransport(i, "strap", valid);
+          }}
         />
       </div>
 
@@ -1900,6 +1647,22 @@ style={selectInput}
 
             <div style={section}>
               <h3>🛠 SCHEDULED MAINTENANCE (PM STATUS)</h3>
+              {showPmValidation && pmValidationDetails.errors.length ? (
+                <div
+                  style={{
+                    marginBottom: 10,
+                    padding: "8px 10px",
+                    background: "#fff1f2",
+                    border: "1px solid #fda4af",
+                    color: "#9f1239",
+                    borderRadius: 10,
+                    fontSize: 13,
+                    fontWeight: 600,
+                  }}
+                >
+                  Missing required PM fields are marked in red with an asterisk (*).
+                </div>
+              ) : null}
               <h4>🛻 TRUCKS</h4>
               {isRealTruckUnit(form.dayTrucks[0]) ? (() => {
                 const item = form.pm.trucks[0];
@@ -1909,11 +1672,11 @@ style={selectInput}
                   <div style={{ ...card, ...statusColors, marginBottom: 10, padding: 12 }}>
                     <div style={row}>
                       <div><label style={label}>Truck #</label><input style={{ ...input, background: "#f8fafc", fontWeight: 700 }} value={item.truck} readOnly /></div>
-                      <div><label style={label}>Current Miles</label><input style={input} type="text" inputMode="numeric" pattern="[0-9]*" value={item.miles} onChange={(e) => updatePm("trucks", 0, "miles", e.target.value.replace(/[^0-9]/g, ""))} /></div>
-                      <div><label style={label}>Current Engine Hours</label><input style={input} type="text" inputMode="numeric" pattern="[0-9]*" value={item.engineHours || ""} onChange={(e) => updatePm("trucks", 0, "engineHours", e.target.value.replace(/[^0-9]/g, ""))} /></div>
-                      <div><label style={label}>Miles Service Due At</label><input style={input} type="text" inputMode="numeric" pattern="[0-9]*" value={item.dueAt} onChange={(e) => updatePm("trucks", 0, "dueAt", e.target.value.replace(/[^0-9]/g, ""))} /></div>
-                      <div><label style={label}>Engine Hours Service Due At</label><input style={input} type="text" inputMode="numeric" pattern="[0-9]*" value={item.engineHoursDueAt || ""} onChange={(e) => updatePm("trucks", 0, "engineHoursDueAt", e.target.value.replace(/[^0-9]/g, ""))} /></div>
-                      <div><label style={label}>QC Due Date</label><input style={input} type="date" value={item.qcDue} onChange={(e) => updatePm("trucks", 0, "qcDue", e.target.value)} /></div>
+                      <div><label style={getPmLabelStyle("pm-trucks-0-miles")}>Current Miles{getPmRequiredSuffix("pm-trucks-0-miles")}</label><input id="pm-trucks-0-miles" style={getPmInputStyle("pm-trucks-0-miles")} type="text" inputMode="numeric" pattern="[0-9]*" value={item.miles} onChange={(e) => updatePm("trucks", 0, "miles", e.target.value.replace(/[^0-9]/g, ""))} /></div>
+                      <div><label style={getPmLabelStyle("pm-trucks-0-engineHours")}>Current Engine Hours{getPmRequiredSuffix("pm-trucks-0-engineHours")}</label><input id="pm-trucks-0-engineHours" style={getPmInputStyle("pm-trucks-0-engineHours")} type="text" inputMode="numeric" pattern="[0-9]*" value={item.engineHours || ""} onChange={(e) => updatePm("trucks", 0, "engineHours", e.target.value.replace(/[^0-9]/g, ""))} /></div>
+                      <div><label style={getPmLabelStyle("pm-trucks-0-dueAt")}>Miles Service Due At{getPmRequiredSuffix("pm-trucks-0-dueAt")}</label><input id="pm-trucks-0-dueAt" style={getPmInputStyle("pm-trucks-0-dueAt")} type="text" inputMode="numeric" pattern="[0-9]*" value={item.dueAt} onChange={(e) => updatePm("trucks", 0, "dueAt", e.target.value.replace(/[^0-9]/g, ""))} /></div>
+                      <div><label style={getPmLabelStyle("pm-trucks-0-engineHoursDueAt")}>Engine Hours Service Due At{getPmRequiredSuffix("pm-trucks-0-engineHoursDueAt")}</label><input id="pm-trucks-0-engineHoursDueAt" style={getPmInputStyle("pm-trucks-0-engineHoursDueAt")} type="text" inputMode="numeric" pattern="[0-9]*" value={item.engineHoursDueAt || ""} onChange={(e) => updatePm("trucks", 0, "engineHoursDueAt", e.target.value.replace(/[^0-9]/g, ""))} /></div>
+                      <div><label style={getPmLabelStyle("pm-trucks-0-qcDue")}>QC Due Date{getPmRequiredSuffix("pm-trucks-0-qcDue")}</label><input id="pm-trucks-0-qcDue" style={getPmInputStyle("pm-trucks-0-qcDue")} type="date" value={item.qcDue} onChange={(e) => updatePm("trucks", 0, "qcDue", e.target.value)} /></div>
                       <div><label style={label}>Status</label><input style={{ ...input, background: "#f8fafc", fontWeight: 700 }} value={truckStatus} readOnly /></div>
                     </div>
                   </div>
@@ -1928,11 +1691,11 @@ style={selectInput}
                   <div style={{ ...card, ...statusColors, marginBottom: 10, padding: 12 }}>
                     <div style={row}>
                       <div><label style={label}>Truck #</label><input style={{ ...input, background: "#f8fafc", fontWeight: 700 }} value={item.truck} readOnly /></div>
-                      <div><label style={label}>Current Miles</label><input style={input} type="text" inputMode="numeric" pattern="[0-9]*" value={item.miles} onChange={(e) => updatePm("trucks", 1, "miles", e.target.value.replace(/[^0-9]/g, ""))} /></div>
-                      <div><label style={label}>Current Engine Hours</label><input style={input} type="text" inputMode="numeric" pattern="[0-9]*" value={item.engineHours || ""} onChange={(e) => updatePm("trucks", 1, "engineHours", e.target.value.replace(/[^0-9]/g, ""))} /></div>
-                      <div><label style={label}>Miles Service Due At</label><input style={input} type="text" inputMode="numeric" pattern="[0-9]*" value={item.dueAt} onChange={(e) => updatePm("trucks", 1, "dueAt", e.target.value.replace(/[^0-9]/g, ""))} /></div>
-                      <div><label style={label}>Engine Hours Service Due At</label><input style={input} type="text" inputMode="numeric" pattern="[0-9]*" value={item.engineHoursDueAt || ""} onChange={(e) => updatePm("trucks", 1, "engineHoursDueAt", e.target.value.replace(/[^0-9]/g, ""))} /></div>
-                      <div><label style={label}>QC Due Date</label><input style={input} type="date" value={item.qcDue} onChange={(e) => updatePm("trucks", 1, "qcDue", e.target.value)} /></div>
+                      <div><label style={getPmLabelStyle("pm-trucks-1-miles")}>Current Miles{getPmRequiredSuffix("pm-trucks-1-miles")}</label><input id="pm-trucks-1-miles" style={getPmInputStyle("pm-trucks-1-miles")} type="text" inputMode="numeric" pattern="[0-9]*" value={item.miles} onChange={(e) => updatePm("trucks", 1, "miles", e.target.value.replace(/[^0-9]/g, ""))} /></div>
+                      <div><label style={getPmLabelStyle("pm-trucks-1-engineHours")}>Current Engine Hours{getPmRequiredSuffix("pm-trucks-1-engineHours")}</label><input id="pm-trucks-1-engineHours" style={getPmInputStyle("pm-trucks-1-engineHours")} type="text" inputMode="numeric" pattern="[0-9]*" value={item.engineHours || ""} onChange={(e) => updatePm("trucks", 1, "engineHours", e.target.value.replace(/[^0-9]/g, ""))} /></div>
+                      <div><label style={getPmLabelStyle("pm-trucks-1-dueAt")}>Miles Service Due At{getPmRequiredSuffix("pm-trucks-1-dueAt")}</label><input id="pm-trucks-1-dueAt" style={getPmInputStyle("pm-trucks-1-dueAt")} type="text" inputMode="numeric" pattern="[0-9]*" value={item.dueAt} onChange={(e) => updatePm("trucks", 1, "dueAt", e.target.value.replace(/[^0-9]/g, ""))} /></div>
+                      <div><label style={getPmLabelStyle("pm-trucks-1-engineHoursDueAt")}>Engine Hours Service Due At{getPmRequiredSuffix("pm-trucks-1-engineHoursDueAt")}</label><input id="pm-trucks-1-engineHoursDueAt" style={getPmInputStyle("pm-trucks-1-engineHoursDueAt")} type="text" inputMode="numeric" pattern="[0-9]*" value={item.engineHoursDueAt || ""} onChange={(e) => updatePm("trucks", 1, "engineHoursDueAt", e.target.value.replace(/[^0-9]/g, ""))} /></div>
+                      <div><label style={getPmLabelStyle("pm-trucks-1-qcDue")}>QC Due Date{getPmRequiredSuffix("pm-trucks-1-qcDue")}</label><input id="pm-trucks-1-qcDue" style={getPmInputStyle("pm-trucks-1-qcDue")} type="date" value={item.qcDue} onChange={(e) => updatePm("trucks", 1, "qcDue", e.target.value)} /></div>
                       <div><label style={label}>Status</label><input style={{ ...input, background: "#f8fafc", fontWeight: 700 }} value={truckStatus} readOnly /></div>
                     </div>
                   </div>
@@ -1948,11 +1711,11 @@ style={selectInput}
                   <div key={i} style={{ ...card, ...statusColors, marginBottom: 10, padding: 12 }}>
                     <div style={row}>
                       <div><label style={label}>Tractor #</label><input style={{ ...input, background: "#f8fafc", fontWeight: 700 }} value={item.tractor} readOnly /></div>
-                      <div><label style={label}>Current Miles</label><input style={input} type="text" inputMode="numeric" pattern="[0-9]*" value={item.miles} onChange={(e) => updatePm("tractors", i, "miles", e.target.value.replace(/[^0-9]/g, ""))} /></div>
-                      <div><label style={label}>Current Hours</label><input style={input} type="text" inputMode="numeric" pattern="[0-9]*" value={item.hours} onChange={(e) => updatePm("tractors", i, "hours", e.target.value.replace(/[^0-9]/g, ""))} /></div>
-                      <div><label style={label}>Miles Service Due At</label><input style={input} type="text" inputMode="numeric" pattern="[0-9]*" value={item.dueAt} onChange={(e) => updatePm("tractors", i, "dueAt", e.target.value.replace(/[^0-9]/g, ""))} /></div>
-                      <div><label style={label}>Hours Service Due At</label><input style={input} type="text" inputMode="numeric" pattern="[0-9]*" value={item.hoursDueAt || ""} onChange={(e) => updatePm("tractors", i, "hoursDueAt", e.target.value.replace(/[^0-9]/g, ""))} /></div>
-                      <div><label style={label}>QC Due Date</label><input style={input} type="date" value={item.qcDue || ""} onChange={(e) => updatePm("tractors", i, "qcDue", e.target.value)} /></div>
+                      <div><label style={getPmLabelStyle(`pm-tractors-${i}-miles`)}>Current Miles{getPmRequiredSuffix(`pm-tractors-${i}-miles`)}</label><input id={`pm-tractors-${i}-miles`} style={getPmInputStyle(`pm-tractors-${i}-miles`)} type="text" inputMode="numeric" pattern="[0-9]*" value={item.miles} onChange={(e) => updatePm("tractors", i, "miles", e.target.value.replace(/[^0-9]/g, ""))} /></div>
+                      <div><label style={getPmLabelStyle(`pm-tractors-${i}-hours`)}>Current Hours{getPmRequiredSuffix(`pm-tractors-${i}-hours`)}</label><input id={`pm-tractors-${i}-hours`} style={getPmInputStyle(`pm-tractors-${i}-hours`)} type="text" inputMode="numeric" pattern="[0-9]*" value={item.hours} onChange={(e) => updatePm("tractors", i, "hours", e.target.value.replace(/[^0-9]/g, ""))} /></div>
+                      <div><label style={getPmLabelStyle(`pm-tractors-${i}-dueAt`)}>Miles Service Due At{getPmRequiredSuffix(`pm-tractors-${i}-dueAt`)}</label><input id={`pm-tractors-${i}-dueAt`} style={getPmInputStyle(`pm-tractors-${i}-dueAt`)} type="text" inputMode="numeric" pattern="[0-9]*" value={item.dueAt} onChange={(e) => updatePm("tractors", i, "dueAt", e.target.value.replace(/[^0-9]/g, ""))} /></div>
+                      <div><label style={getPmLabelStyle(`pm-tractors-${i}-hoursDueAt`)}>Hours Service Due At{getPmRequiredSuffix(`pm-tractors-${i}-hoursDueAt`)}</label><input id={`pm-tractors-${i}-hoursDueAt`} style={getPmInputStyle(`pm-tractors-${i}-hoursDueAt`)} type="text" inputMode="numeric" pattern="[0-9]*" value={item.hoursDueAt || ""} onChange={(e) => updatePm("tractors", i, "hoursDueAt", e.target.value.replace(/[^0-9]/g, ""))} /></div>
+                      <div><label style={getPmLabelStyle(`pm-tractors-${i}-qcDue`)}>QC Due Date{getPmRequiredSuffix(`pm-tractors-${i}-qcDue`)}</label><input id={`pm-tractors-${i}-qcDue`} style={getPmInputStyle(`pm-tractors-${i}-qcDue`)} type="date" value={item.qcDue || ""} onChange={(e) => updatePm("tractors", i, "qcDue", e.target.value)} /></div>
                       <div><label style={label}>Status</label><input style={{ ...input, background: "#f8fafc", fontWeight: 700 }} value={getTractorPmStatus(item, form.date)} readOnly /></div>
                     </div>
                   </div>
@@ -1968,10 +1731,10 @@ style={selectInput}
                   <div key={i} style={{ ...card, ...statusColors, marginBottom: 10, padding: 12 }}>
                     <div style={row}>
                       <div><label style={label}>Pump #</label><input style={{ ...input, background: "#f8fafc", fontWeight: 700 }} value={item.pump} readOnly /></div>
-                      <div><label style={label}>Current Hours</label><input style={input} type="text" inputMode="numeric" pattern="[0-9]*" value={item.hours} onChange={(e) => updatePm("pumps", i, "hours", e.target.value.replace(/[^0-9]/g, ""))} /></div>
-                      <div><label style={label}>Fuel / Air Filters Due At</label><input style={input} type="text" inputMode="numeric" pattern="[0-9]*" value={item.fuelAirDue} onChange={(e) => updatePm("pumps", i, "fuelAirDue", e.target.value.replace(/[^0-9]/g, ""))} /></div>
-                      <div><label style={label}>Oil Filters Due At</label><input style={input} type="text" inputMode="numeric" pattern="[0-9]*" value={item.oilDue} onChange={(e) => updatePm("pumps", i, "oilDue", e.target.value.replace(/[^0-9]/g, ""))} /></div>
-                      <div><label style={label}>1000 HR PM Due At</label><input style={input} type="text" inputMode="numeric" pattern="[0-9]*" value={item.pm1000Due} onChange={(e) => updatePm("pumps", i, "pm1000Due", e.target.value.replace(/[^0-9]/g, ""))} /></div>
+                      <div><label style={getPmLabelStyle(`pm-pumps-${i}-hours`)}>Current Hours{getPmRequiredSuffix(`pm-pumps-${i}-hours`)}</label><input id={`pm-pumps-${i}-hours`} style={getPmInputStyle(`pm-pumps-${i}-hours`)} type="text" inputMode="numeric" pattern="[0-9]*" value={item.hours} onChange={(e) => updatePm("pumps", i, "hours", e.target.value.replace(/[^0-9]/g, ""))} /></div>
+                      <div><label style={getPmLabelStyle(`pm-pumps-${i}-fuelAirDue`)}>Fuel / Air Filters Due At{getPmRequiredSuffix(`pm-pumps-${i}-fuelAirDue`)}</label><input id={`pm-pumps-${i}-fuelAirDue`} style={getPmInputStyle(`pm-pumps-${i}-fuelAirDue`)} type="text" inputMode="numeric" pattern="[0-9]*" value={item.fuelAirDue} onChange={(e) => updatePm("pumps", i, "fuelAirDue", e.target.value.replace(/[^0-9]/g, ""))} /></div>
+                      <div><label style={getPmLabelStyle(`pm-pumps-${i}-oilDue`)}>Oil Filters Due At{getPmRequiredSuffix(`pm-pumps-${i}-oilDue`)}</label><input id={`pm-pumps-${i}-oilDue`} style={getPmInputStyle(`pm-pumps-${i}-oilDue`)} type="text" inputMode="numeric" pattern="[0-9]*" value={item.oilDue} onChange={(e) => updatePm("pumps", i, "oilDue", e.target.value.replace(/[^0-9]/g, ""))} /></div>
+                      <div><label style={getPmLabelStyle(`pm-pumps-${i}-pm1000Due`)}>1000 HR PM Due At{getPmRequiredSuffix(`pm-pumps-${i}-pm1000Due`)}</label><input id={`pm-pumps-${i}-pm1000Due`} style={getPmInputStyle(`pm-pumps-${i}-pm1000Due`)} type="text" inputMode="numeric" pattern="[0-9]*" value={item.pm1000Due} onChange={(e) => updatePm("pumps", i, "pm1000Due", e.target.value.replace(/[^0-9]/g, ""))} /></div>
                       <div><label style={label}>Status</label><input style={{ ...input, background: "#f8fafc", fontWeight: 700 }} value={pumpStatus} readOnly /></div>
                     </div>
                   </div>
@@ -1996,8 +1759,8 @@ style={selectInput}
                     <div key={unit} style={{ ...card, ...statusColors, marginBottom: 10, padding: 12 }}>
                       <div style={row}>
                         <div><label style={label}>Generator Unit</label><input style={{ ...input, background: "#f8fafc", fontWeight: 700 }} value={unit} readOnly /></div>
-                        <div><label style={label}>Current Hours</label><input style={input} type="text" inputMode="numeric" pattern="[0-9]*" value={item.hours} onChange={(e) => updatePm("generators", i, "unit", unit) || updatePm("generators", i, "hours", e.target.value.replace(/[^0-9]/g, ""))} /></div>
-                        <div><label style={label}>Hours PM Due At</label><input style={input} type="text" inputMode="numeric" pattern="[0-9]*" value={item.dueAt} onChange={(e) => updatePm("generators", i, "unit", unit) || updatePm("generators", i, "dueAt", e.target.value.replace(/[^0-9]/g, ""))} /></div>
+                        <div><label style={getPmLabelStyle(`pm-generators-${i}-hours`)}>Current Hours{getPmRequiredSuffix(`pm-generators-${i}-hours`)}</label><input id={`pm-generators-${i}-hours`} style={getPmInputStyle(`pm-generators-${i}-hours`)} type="text" inputMode="numeric" pattern="[0-9]*" value={item.hours} onChange={(e) => updatePm("generators", i, "unit", unit) || updatePm("generators", i, "hours", e.target.value.replace(/[^0-9]/g, ""))} /></div>
+                        <div><label style={getPmLabelStyle(`pm-generators-${i}-dueAt`)}>Hours PM Due At{getPmRequiredSuffix(`pm-generators-${i}-dueAt`)}</label><input id={`pm-generators-${i}-dueAt`} style={getPmInputStyle(`pm-generators-${i}-dueAt`)} type="text" inputMode="numeric" pattern="[0-9]*" value={item.dueAt} onChange={(e) => updatePm("generators", i, "unit", unit) || updatePm("generators", i, "dueAt", e.target.value.replace(/[^0-9]/g, ""))} /></div>
                         <div><label style={label}>Status</label><input style={{ ...input, background: "#f8fafc", fontWeight: 700 }} value={generatorStatus} readOnly /></div>
                       </div>
                     </div>
@@ -2009,18 +1772,65 @@ style={selectInput}
             <div style={section}>
               <h3>🛢️ OIL / PARTS / SUPPLIES NEEDED</h3>
               {form.partsNeeded.map((v, i) => (
-                <input key={i} style={{ ...input, marginBottom: 8 }} value={v} onChange={(e) => updateArray("partsNeeded", i, e.target.value)} />
+                <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: isMobile ? "wrap" : "nowrap" }}>
+                  <input style={{ ...input, flex: 1, minWidth: isMobile ? "100%" : 0 }} value={v} onChange={(e) => updateArray("partsNeeded", i, e.target.value)} />
+                  {form.partsNeeded.length > 1 ? (
+                    <button type="button" onClick={() => removeTextEntry("partsNeeded", i)} style={{ ...input, width: isMobile ? "100%" : "auto", background: "#fee2e2", border: "1px solid #fca5a5", color: "#991b1b", WebkitTextFillColor: "#991b1b", fontWeight: 600, cursor: "pointer" }}>
+                      Remove
+                    </button>
+                  ) : null}
+                </div>
               ))}
+              {form.partsNeeded.length < 10 ? (
+                <button type="button" onClick={() => addTextEntry("partsNeeded")} style={addActionButton}>
+                  + Add Another Supply Item
+                </button>
+              ) : null}
             </div>
 
             <div style={section}>
               <h3>⚠️ ISSUES / NOTES / FOLLOW-UPS</h3>
               {form.issues.map((v, i) => (
-                <input key={i} style={{ ...input, marginBottom: 8 }} value={v} onChange={(e) => updateArray("issues", i, e.target.value)} />
+                <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: isMobile ? "wrap" : "nowrap" }}>
+                  <input style={{ ...input, flex: 1, minWidth: isMobile ? "100%" : 0 }} value={v} onChange={(e) => updateArray("issues", i, e.target.value)} />
+                  {form.issues.length > 1 ? (
+                    <button type="button" onClick={() => removeTextEntry("issues", i)} style={{ ...input, width: isMobile ? "100%" : "auto", background: "#fee2e2", border: "1px solid #fca5a5", color: "#991b1b", WebkitTextFillColor: "#991b1b", fontWeight: 600, cursor: "pointer" }}>
+                      Remove
+                    </button>
+                  ) : null}
+                </div>
               ))}
+              {form.issues.length < 10 ? (
+                <button type="button" onClick={() => addTextEntry("issues")} style={addActionButton}>
+                  + Add Another Issue
+                </button>
+              ) : null}
             </div>
 
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 18, alignItems: "center" }}>
+            <div style={notificationStrip}>
+              {saveMessage && (
+                <div style={{ ...notificationBase, ...(saveMessageType === "error" ? notificationStyles.error : notificationStyles.success) }}>
+                  <span>{saveMessage}</span>
+                </div>
+              )}
+              {loadMessage && (
+                <div style={{ ...notificationBase, ...notificationStyles.success }}>
+                  <span>{loadMessage}</span>
+                </div>
+              )}
+              {viewMessage && (
+                <div style={{ ...notificationBase, ...notificationStyles.info }}>
+                  <span>{viewMessage}</span>
+                </div>
+              )}
+              {unitMessage && (
+                <div style={{ ...notificationBase, ...notificationStyles.warning }}>
+                  <span>{unitMessage}</span>
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 18, alignItems: "center", justifyContent: "center" }}>
               <button
   onClick={saveReport}
   disabled={isSaving}
@@ -2037,46 +1847,78 @@ style={selectInput}
 >
   {isSaving ? "Saving..." : "Save Report"}
 </button>
-{saveMessage && (
-  <div style={{ color: saveMessageType === "error" ? "#b91c1c" : "#166534", fontWeight: 600 }}>{saveMessage}</div>
-)}
-{loadMessage && (
-  <div style={{ color: "#1d4ed8", fontWeight: 600 }}>{loadMessage}</div>
-)}
-{viewMessage && (
-  <div style={{ color: "#7c3aed", fontWeight: 600 }}>{viewMessage}</div>
-)}
-{unitMessage && (
-  <div style={{ color: "#b45309", fontWeight: 600 }}>{unitMessage}</div>
-)}
               <button onClick={loadLastReport} style={{ ...input, width: "auto", cursor: "pointer", background: "#e2e8f0", border: "none", padding: "12px 16px" }}>Load Last Report</button>
-              <button onClick={copySummary} style={{ ...input, width: "auto", cursor: "pointer", background: "#dbeafe", border: "none", padding: "12px 16px" }}>Copy Summary</button>
             </div>
           </div>
 
           <div style={{ display: "grid", gap: 16, alignContent: "start" }}>
             <div style={card}>
-              <h3 style={{ marginTop: 0 }}>{selectedReport ? "Saved Report View" : "Preview"}</h3>
-              {selectedReport ? (
-                <SavedReportView report={selectedReport} />
+              <h3 style={{ marginTop: 0 }}>{resolvedSelectedReport ? "📄 Saved Report View" : "👀 Preview"}</h3>
+              {resolvedSelectedReport ? (
+                <>
+                  <SavedReportView report={resolvedSelectedReport} />
+                  <div style={{ display: "flex", justifyContent: "center", marginTop: 12, width: "100%" }}>
+                    <button
+                      type="button"
+                      onClick={copyReportForTeams}
+                      style={{
+                        ...input,
+                        width: isMobile ? "100%" : "auto",
+                        maxWidth: 360,
+                        padding: "10px 12px",
+                        background: "#dbeafe",
+                        border: "1px solid #93c5fd",
+                        color: "#1d4ed8",
+                        WebkitTextFillColor: "#1d4ed8",
+                        fontWeight: 700,
+                        cursor: "pointer",
+                      }}
+                    >
+                      Copy For Microsoft Teams
+                    </button>
+                  </div>
+                  {copyMessage ? (
+                    <div style={{ marginTop: 8, textAlign: "center", color: "#166534", fontWeight: 700, fontSize: 13 }}>{copyMessage}</div>
+                  ) : null}
+                </>
               ) : (
                 <pre style={{ whiteSpace: "pre-wrap", fontFamily: "inherit", fontSize: 14, margin: 0 }}>{summary}</pre>
               )}
             </div>
 
             <div style={card}>
-              <h3 style={{ marginTop: 0 }}>Saved Reports – Fleet {activeFleet}</h3>
+              <div style={{ display: "grid", gap: 10, justifyItems: "center", textAlign: "center" }}>
+                <h3 style={{ marginTop: 0, marginBottom: 0 }}>Saved Reports – Fleet {activeFleet}</h3>
+                <button
+                  type="button"
+                  onClick={openDeleteAccessPrompt}
+                  style={{
+                    ...input,
+                    width: "auto",
+                    padding: "8px 10px",
+                    background: deleteUnlocked ? "#dcfce7" : "#fee2e2",
+                    border: deleteUnlocked ? "1px solid #86efac" : "1px solid #fca5a5",
+                    color: deleteUnlocked ? "#166534" : "#991b1b",
+                    WebkitTextFillColor: deleteUnlocked ? "#166534" : "#991b1b",
+                    cursor: "pointer",
+                    fontWeight: 600,
+                    fontSize: 13,
+                  }}
+                >
+                  Delete Reports
+                </button>
+              </div>
 
               {reportsLoading ? (
-                <p style={{ color: "#64748b" }}>Loading reports...</p>
+                <p style={{ color: "#64748b", textAlign: "center" }}>Loading reports...</p>
               ) : visibleSavedReports.length === 0 ? (
-                <p style={{ color: "#64748b" }}>No saved reports yet.</p>
+                <p style={{ color: "#64748b", textAlign: "center" }}>No saved reports yet.</p>
               ) : (
                 visibleSavedReports.map((r) => (
-                  <div key={r.id} style={{ borderTop: "1px solid #e5e7eb", paddingTop: 10, marginTop: 10 }}>
+                  <div key={r.id} style={{ borderTop: "1px solid #e5e7eb", paddingTop: 10, marginTop: 10, textAlign: "center" }}>
                     <strong>Fleet {r.fleet || "No Fleet"}</strong>
                     <div>{r.shift} shift • {r.date}</div>
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8, justifyContent: "center", alignItems: "center" }}>
                       <button
                         onClick={() => viewSavedReport(r)}
                         style={{
@@ -2105,38 +1947,27 @@ style={selectInput}
                       >
                         Load This Report
                       </button>
-                      <button
-                        onClick={() => openDeletePrompt(r.id)}
-                        style={{
-                          background: "#fee2e2",
-                          color: "#991b1b",
-                          border: "1px solid #fca5a5",
-                          borderRadius: 10,
-                          padding: "8px 10px",
-                          cursor: "pointer",
-                          fontWeight: 600,
-                        }}
-                      >
-                        Delete Report
-                      </button>
+                      {deleteUnlocked ? (
+                        <button
+                          onClick={() => openDeletePrompt(r.id)}
+                          style={{
+                            background: "#fee2e2",
+                            color: "#991b1b",
+                            border: "1px solid #fca5a5",
+                            borderRadius: 10,
+                            padding: "8px 10px",
+                            cursor: "pointer",
+                            fontWeight: 600,
+                          }}
+                        >
+                          Delete Report
+                        </button>
+                      ) : null}
                     </div>
 
                     {deleteTargetId === r.id ? (
                       <div style={{ marginTop: 10, padding: 12, border: "1px solid #fecaca", background: "#fff7f7", borderRadius: 12 }}>
-                        <label style={label}>Enter delete password</label>
-                        <input
-                          style={input}
-                          type="password"
-                          value={deletePassword}
-                          onChange={(e) => setDeletePassword(e.target.value)}
-                          placeholder="Password required"
-                        />
-                        {deleteMessage ? (
-                          <div style={{ marginTop: 6, fontSize: 14, color: deleteMessage === "Wrong password" ? "#b91c1c" : "#166534" }}>
-                            {deleteMessage}
-                          </div>
-                        ) : null}
-                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10, justifyContent: "center", alignItems: "center" }}>
                           <button
                             onClick={() => deleteReport(r.id)}
                             style={{
@@ -2172,6 +2003,129 @@ style={selectInput}
                 ))
               )}
             </div>
+
+            {showDeleteAccessPrompt ? (
+              <div
+                style={{
+                  position: "fixed",
+                  inset: 0,
+                  background: "rgba(15,23,42,0.35)",
+                  display: "grid",
+                  placeItems: "center",
+                  padding: 16,
+                  zIndex: 70,
+                }}
+              >
+                <div
+                  style={{
+                    ...card,
+                    width: "100%",
+                    maxWidth: 420,
+                    padding: 16,
+                  }}
+                >
+                  <label style={label}>Enter delete password</label>
+                  <input
+                    style={input}
+                    type="password"
+                    value={deletePassword}
+                    onChange={(e) => setDeletePassword(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") confirmDeleteAccess();
+                    }}
+                    placeholder="Password required"
+                    autoFocus
+                  />
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+                    <button
+                      type="button"
+                      onClick={confirmDeleteAccess}
+                      style={{
+                        background: "#991b1b",
+                        color: "#ffffff",
+                        border: "none",
+                        borderRadius: 10,
+                        padding: "8px 12px",
+                        cursor: "pointer",
+                        fontWeight: 600,
+                      }}
+                    >
+                      Unlock Delete
+                    </button>
+                    <button
+                      type="button"
+                      onClick={cancelDeleteAccessPrompt}
+                      style={{
+                        background: "#e5e7eb",
+                        color: "#111827",
+                        border: "none",
+                        borderRadius: 10,
+                        padding: "8px 12px",
+                        cursor: "pointer",
+                        fontWeight: 600,
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            {showHelp ? (
+              <div
+                style={{
+                  position: "fixed",
+                  inset: 0,
+                  background: "rgba(15,23,42,0.35)",
+                  display: "grid",
+                  placeItems: "center",
+                  padding: 16,
+                  zIndex: 80,
+                }}
+              >
+                <div
+                  style={{
+                    ...card,
+                    width: "100%",
+                    maxWidth: 620,
+                    maxHeight: "80vh",
+                    overflowY: "auto",
+                    padding: 18,
+                  }}
+                >
+                  <h3 style={{ marginTop: 0, marginBottom: 10 }}>❓ How To Use This Report</h3>
+                  <div style={{ color: "#475569", lineHeight: 1.5 }}>
+                    Fill in only what applies to your location and shift. Most sections support adding or removing rows as needed.
+                  </div>
+                  <ol style={{ margin: "12px 0 0", paddingLeft: 20, color: "#1f2937", lineHeight: 1.6 }}>
+                    <li>Choose Fleet tab, Date, and Shift.</li>
+                    <li>Add units and equipment in Inventory sections.</li>
+                    <li>Complete PM fields for any active truck, tractor, pump, or generator.</li>
+                    <li>Add supplies needed and issue notes before saving.</li>
+                    <li>Use `Load Last Report` to copy the latest report for this fleet.</li>
+                    <li>Use Saved Reports on the right to view, load, or delete old reports.</li>
+                  </ol>
+                  <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
+                    <button
+                      type="button"
+                      onClick={() => setShowHelp(false)}
+                      style={{
+                        ...input,
+                        width: "auto",
+                        padding: "8px 12px",
+                        background: "#e5e7eb",
+                        border: "none",
+                        cursor: "pointer",
+                        fontWeight: 700,
+                      }}
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
       </div>
