@@ -36,6 +36,7 @@ export function HelpModal({ showHelp, setShowHelp }) {
           <li>Complete PM fields for any active truck, tractor, pump, or generator.</li>
           <li>Add supplies needed and issue notes before saving.</li>
           <li>Use `Load Last Report` to copy the latest report for this fleet.</li>
+          <li>Open a saved report and click `Copy For Microsoft Teams` to copy a Teams-ready message.</li>
           <li>Use Saved Reports on the right to view, load, or delete old reports.</li>
         </ol>
         <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
