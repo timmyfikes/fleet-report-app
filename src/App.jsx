@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect, useCallback } from "react";
+import React, { useMemo, useState, useEffect, useCallback, useRef } from "react";
 import {
   input,
   selectInput,
@@ -75,6 +75,7 @@ export default function FleetReportApp() {
   const [showHelp, setShowHelp] = useState(false);
   const [showPmValidation, setShowPmValidation] = useState(false);
   const [copyMessage, setCopyMessage] = useState("");
+  const savedReportViewRef = useRef(null);
 
   const form = fleetForms[activeFleet];
   const equipmentBox = {
@@ -742,6 +743,9 @@ ${issueLines}`;
   const viewSavedReport = useCallback((report) => {
     setSelectedReport(report);
     setViewMessage("Viewing Report 👁️");
+    window.setTimeout(() => {
+      savedReportViewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 80);
     setTimeout(() => setViewMessage(""), NOTIFICATION_MS);
   }, []);
 
@@ -1811,13 +1815,15 @@ style={selectInput}
           </div>
 
           <div style={{ display: "grid", gap: 16, alignContent: "start" }}>
-            <PreviewPanel
-              resolvedSelectedReport={resolvedSelectedReport}
-              summary={summary}
-              copyReportForTeams={copyReportForTeams}
-              isMobile={isMobile}
-              copyMessage={copyMessage}
-            />
+            <div ref={savedReportViewRef}>
+              <PreviewPanel
+                resolvedSelectedReport={resolvedSelectedReport}
+                summary={summary}
+                copyReportForTeams={copyReportForTeams}
+                isMobile={isMobile}
+                copyMessage={copyMessage}
+              />
+            </div>
 
             <SavedReportsPanel
               activeFleet={activeFleet}
