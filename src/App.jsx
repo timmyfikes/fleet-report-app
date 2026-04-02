@@ -1180,6 +1180,7 @@ ${issueLines}`;
                         <option value="Boost Pump">Boost Pump</option>
                         <option value="Generator">Generator</option>
                         <option value="Command Center">Command Center</option>
+                        <option value="Shower Trailer">Shower Trailer</option>
                         <option value="Other">Other</option>
                       </select>
                       {item.description === "Other" ? (
