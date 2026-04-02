@@ -8,9 +8,9 @@ export function HeaderCard({ isMobile, activeFleet, fleetTabs, setActiveFleet, s
         type="button"
         onClick={() => setShowHelp(true)}
         style={{
-          position: "absolute",
-          top: 14,
-          right: 14,
+          position: isMobile ? "static" : "absolute",
+          top: isMobile ? undefined : 14,
+          right: isMobile ? undefined : 14,
           ...input,
           width: "auto",
           padding: "8px 12px",
@@ -21,6 +21,9 @@ export function HeaderCard({ isMobile, activeFleet, fleetTabs, setActiveFleet, s
           fontWeight: 700,
           fontSize: 13,
           cursor: "pointer",
+          marginLeft: isMobile ? "auto" : 0,
+          marginBottom: isMobile ? 10 : 0,
+          display: "block",
         }}
       >
         Help
