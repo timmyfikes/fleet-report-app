@@ -1,9 +1,11 @@
 import React, { memo, useMemo, useState } from "react";
 import { input } from "./config";
 
-export const SearchableSelect = memo(function SearchableSelect({ value, onChange, options, placeholder }) {
+export const SearchableSelect = memo(function SearchableSelect({ value, onChange, options, placeholder, enableOther = false }) {
   const [isOpen, setIsOpen] = useState(false);
   const [filterText, setFilterText] = useState("");
+  const [isCustomEntry, setIsCustomEntry] = useState(false);
+  const isTypingCustom = isCustomEntry && !options.includes(value);
 
   const filteredOptions = useMemo(() => {
     const q = (filterText || "").toLowerCase().trim();
@@ -16,19 +18,25 @@ export const SearchableSelect = memo(function SearchableSelect({ value, onChange
       <input
         style={{ ...input, paddingRight: 36 }}
         placeholder={placeholder}
-        value={value}
+        value={isOpen && !isTypingCustom ? filterText : value}
         onFocus={() => {
           setIsOpen(true);
-          setFilterText("");
+          if (!isTypingCustom) setFilterText("");
         }}
         onChange={(e) => {
           const nextValue = e.target.value;
-          setFilterText(nextValue);
-          onChange(nextValue);
+          if (isTypingCustom) {
+            onChange(nextValue);
+          } else {
+            setFilterText(nextValue);
+          }
           setIsOpen(true);
         }}
         onBlur={() => {
-          window.setTimeout(() => setIsOpen(false), 150);
+          window.setTimeout(() => {
+            setIsOpen(false);
+            setFilterText("");
+          }, 150);
         }}
       />
       <div style={{ position: "absolute", right: 12, top: 11, color: "#475569", pointerEvents: "none", fontSize: 14 }}>▾</div>
@@ -56,6 +64,7 @@ export const SearchableSelect = memo(function SearchableSelect({ value, onChange
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => {
                   onChange(option);
+                  setIsCustomEntry(false);
                   setFilterText("");
                   setIsOpen(false);
                 }}
@@ -76,6 +85,32 @@ export const SearchableSelect = memo(function SearchableSelect({ value, onChange
           ) : (
             <div style={{ padding: "10px 12px", color: "#64748b" }}>No matches. Keep typing to enter a custom unit.</div>
           )}
+          {enableOther ? (
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                setIsCustomEntry(true);
+                onChange("");
+                setFilterText("");
+                setIsOpen(false);
+              }}
+              style={{
+                display: "block",
+                width: "100%",
+                textAlign: "left",
+                padding: "10px 12px",
+                border: "none",
+                borderTop: "1px solid #e2e8f0",
+                background: "#f8fafc",
+                color: "#1d4ed8",
+                cursor: "pointer",
+                fontWeight: 700,
+              }}
+            >
+              Other (type custom)
+            </button>
+          ) : null}
         </div>
       ) : null}
     </div>

@@ -857,6 +857,7 @@ ${issueLines}`;
                           onChange={(nextValue) => updateArray("pumpUnits", i, nextValue)}
                           options={PUMP_OPTIONS}
                           placeholder="Select or type pump"
+                          enableOther
                         />
                       </div>
                       {form.pumpUnits.length > 1 ? (
@@ -879,6 +880,7 @@ ${issueLines}`;
                           onChange={(nextValue) => updateArray("tractors", i, nextValue)}
                           options={TRACTOR_OPTIONS}
                           placeholder="Select or type tractor"
+                          enableOther
                         />
                       </div>
                       {form.tractors.length > 1 ? (
