@@ -552,7 +552,7 @@ export default function FleetReportApp() {
 
     setReportsLoading(true);
     const { data, error } = await supabase
-      .from("fleet_reports")
+      .from("reports")
       .select("id, fleet, report_date, shift, report_data, created_at")
       .order("created_at", { ascending: false });
 
@@ -991,7 +991,7 @@ ${issueLines}`;
     report_data: form,
   };
 
-  const { error } = await supabase.from("fleet_reports").insert(payload);
+  const { error } = await supabase.from("reports").insert(payload);
 
   if (error) {
     console.error(error);
@@ -1038,7 +1038,7 @@ ${issueLines}`;
     return;
   }
 
-  const { error } = await supabase.from("fleet_reports").delete().eq("id", reportId);
+  const { error } = await supabase.from("reports").delete().eq("id", reportId);
 
   if (error) {
     console.error(error);
