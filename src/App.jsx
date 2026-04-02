@@ -793,7 +793,7 @@ ${issueLines}`;
             </div>
 
             <div style={section}>
-              <h3>Employees</h3>
+              <h3>👥 Employees</h3>
               <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 16 }}>
                 <div>
                   <div><label style={label}>Day Shift Operator</label><input style={input} value={form.employees.dayOperator} onChange={(e) => updateEmployee("dayOperator", e.target.value)} /></div>
@@ -892,7 +892,7 @@ ${issueLines}`;
                 </div>
 
                 <div style={{ ...equipmentBox, gridColumn: "1 / -1" }}>
-                  <label style={label}>Command Centers</label>
+                  <label style={label}>🛰️ Command Centers</label>
                   {form.commandCenters.map((cc, i) => (
                     <div key={i} style={{ marginBottom: 10 }}>
                       <div style={{ display: "flex", gap: 8 }}>
@@ -938,7 +938,7 @@ ${issueLines}`;
                 </div>
 
                 <div style={{ ...equipmentBox, gridColumn: "1 / -1" }}>
-                  <label style={label}>Support Trailers / Floats</label>
+                  <label style={label}>🚛 Support Trailers / Floats</label>
                   <div style={{ fontSize: 13, color: "#475569", marginBottom: 6 }}>
                     Please ensure all trailers on location are added, including bumper pull trailers, gooseneck trailers, floats, etc.
                   </div>
@@ -985,7 +985,7 @@ ${issueLines}`;
 
               <div style={{ ...row, marginTop: 8 }}>
                 <div style={equipmentBox}>
-                  <h3>Day Shift Truck(s)</h3>
+                  <h3>🛻 Day Shift Truck(s)</h3>
                   {form.dayTrucks.map((v, i) => {
                     const num = (v || "").replace("C-", "").replace("OTHER", "");
                     const options = ["416","427","430","431","464","496","706","710","715","721","722","723","724","725","727","728","745","746","747","749"];
@@ -1030,7 +1030,7 @@ ${issueLines}`;
                 </div>
 
                 <div style={equipmentBox}>
-                  <h3>Night Shift Truck(s)</h3>
+                  <h3>🚚 Night Shift Truck(s)</h3>
                   {form.nightTrucks.map((v, i) => {
                     const num = (v || "").replace("C-", "").replace("OTHER", "");
                     const options = ["416","427","430","431","464","496","706","710","715","721","722","723","724","725","727","728","745","746","747","749"];
@@ -1076,7 +1076,7 @@ ${issueLines}`;
               </div>
 
               <div style={section}>
-                <h3>Chem Add / Chemical Skid(s)</h3>
+                <h3>🧪 Chem Add / Chemical Skid(s)</h3>
                 {form.chemicalSkids.map((v, i) => {
                   let prefix = "CAT-";
                   let number = "";
@@ -1136,7 +1136,7 @@ ${issueLines}`;
               </div>
 
               <div style={section}>
-                <h3>Rental Equipment</h3>
+                <h3>📦 Rental Equipment</h3>
                 {form.rentalEquipment.map((item, i) => (
                   <div key={i} style={{ ...card, marginBottom: 10, padding: 12 }}>
                     <div style={{ marginBottom: 8 }}>

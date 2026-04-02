@@ -17,7 +17,7 @@ export function SavedReportsPanel({
   return (
     <div style={card}>
       <div style={{ display: "grid", gap: 10, justifyItems: "center", textAlign: "center" }}>
-        <h3 style={{ marginTop: 0, marginBottom: 0 }}>Saved Reports – Fleet {activeFleet}</h3>
+        <h3 style={{ marginTop: 0, marginBottom: 0 }}>📚 Saved Reports – Fleet {activeFleet}</h3>
         <button
           type="button"
           onClick={openDeleteAccessPrompt}
@@ -34,7 +34,7 @@ export function SavedReportsPanel({
             fontSize: 13,
           }}
         >
-          Delete Reports
+          🗑️ Delete Reports
         </button>
       </div>
 
@@ -60,7 +60,7 @@ export function SavedReportsPanel({
                   fontWeight: 600,
                 }}
               >
-                View Report
+                👁️ View Report
               </button>
               <button
                 onClick={() => loadSavedReport(r)}
@@ -74,7 +74,7 @@ export function SavedReportsPanel({
                   fontWeight: 600,
                 }}
               >
-                Load This Report
+                📥 Load This Report
               </button>
               {deleteUnlocked ? (
                 <button
@@ -89,7 +89,7 @@ export function SavedReportsPanel({
                     fontWeight: 600,
                   }}
                 >
-                  Delete Report
+                  🗑️ Delete Report
                 </button>
               ) : null}
             </div>
