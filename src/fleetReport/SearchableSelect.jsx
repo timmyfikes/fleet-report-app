@@ -3,12 +3,13 @@ import { input } from "./config";
 
 export const SearchableSelect = memo(function SearchableSelect({ value, onChange, options, placeholder }) {
   const [isOpen, setIsOpen] = useState(false);
+  const [filterText, setFilterText] = useState("");
 
   const filteredOptions = useMemo(() => {
-    const q = (value || "").toLowerCase().trim();
+    const q = (filterText || "").toLowerCase().trim();
     if (!q) return options;
     return options.filter((option) => option.toLowerCase().includes(q));
-  }, [value, options]);
+  }, [filterText, options]);
 
   return (
     <div style={{ position: "relative", marginBottom: 8 }}>
@@ -16,9 +17,14 @@ export const SearchableSelect = memo(function SearchableSelect({ value, onChange
         style={{ ...input, paddingRight: 36 }}
         placeholder={placeholder}
         value={value}
-        onFocus={() => setIsOpen(true)}
+        onFocus={() => {
+          setIsOpen(true);
+          setFilterText("");
+        }}
         onChange={(e) => {
-          onChange(e.target.value);
+          const nextValue = e.target.value;
+          setFilterText(nextValue);
+          onChange(nextValue);
           setIsOpen(true);
         }}
         onBlur={() => {
@@ -50,6 +56,7 @@ export const SearchableSelect = memo(function SearchableSelect({ value, onChange
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => {
                   onChange(option);
+                  setFilterText("");
                   setIsOpen(false);
                 }}
                 style={{
@@ -74,4 +81,3 @@ export const SearchableSelect = memo(function SearchableSelect({ value, onChange
     </div>
   );
 });
-
