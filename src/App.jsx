@@ -76,18 +76,11 @@ export default function FleetReportApp() {
   const [copyMessage, setCopyMessage] = useState("");
 
   const form = fleetForms[activeFleet];
-  const subsectionDivider = {
-    gridColumn: "1 / -1",
-    borderTop: "1px solid #d7e1ee",
-    margin: "10px 0 4px",
-    paddingTop: 8,
-  };
-  const subsectionTitle = {
-    fontSize: 13,
-    fontWeight: 800,
-    letterSpacing: 0.3,
-    color: "#475569",
-    textTransform: "uppercase",
+  const equipmentBox = {
+    background: "#f8fafc",
+    border: "1px solid #e2e8f0",
+    borderRadius: 12,
+    padding: 12,
   };
 
   const fetchSavedReports = useCallback(async () => {
@@ -854,7 +847,7 @@ ${issueLines}`;
             <div style={section}>
               <h3>🚛 EQUIPMENT INVENTORY</h3>
               <div style={row}>
-                <div>
+                <div style={equipmentBox}>
                   <label style={label}>Pump Units</label>
                   {form.pumpUnits.map((v, i) => (
                     <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 8 }}>
@@ -876,7 +869,7 @@ ${issueLines}`;
                   ) : null}
                 </div>
 
-                <div>
+                <div style={equipmentBox}>
                   <label style={label}>Tractors</label>
                   {form.tractors.map((v, i) => (
                     <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 8 }}>
@@ -898,7 +891,7 @@ ${issueLines}`;
                   ) : null}
                 </div>
 
-                <div style={{ gridColumn: "1 / -1" }}>
+                <div style={{ ...equipmentBox, gridColumn: "1 / -1" }}>
                   <label style={label}>Command Centers</label>
                   {form.commandCenters.map((cc, i) => (
                     <div key={i} style={{ marginBottom: 10 }}>
@@ -944,10 +937,7 @@ ${issueLines}`;
                   ) : null}
                 </div>
 
-                <div style={subsectionDivider}>
-                  <div style={subsectionTitle}>Support Trailers</div>
-                </div>
-                <div>
+                <div style={{ ...equipmentBox, gridColumn: "1 / -1" }}>
                   <label style={label}>Support Trailers / Floats</label>
                   <div style={{ fontSize: 13, color: "#475569", marginBottom: 6 }}>
                     Please ensure all trailers on location are added, including bumper pull trailers, gooseneck trailers, floats, etc.
@@ -971,10 +961,7 @@ ${issueLines}`;
                   ) : null}
                 </div>
 
-                <div style={subsectionDivider}>
-                  <div style={subsectionTitle}>Iron Package</div>
-                </div>
-                <div style={{ gridColumn: "1 / -1" }}>
+                <div style={{ ...equipmentBox, gridColumn: "1 / -1" }}>
                   <label style={label}>🔩 Iron Package</label>
                   <div style={{ display: "grid", gap: 8, gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr" }}>
                     <div>
@@ -996,11 +983,8 @@ ${issueLines}`;
                 </div>
               </div>
 
-              <div style={subsectionDivider}>
-                <div style={subsectionTitle}>Assigned Trucks</div>
-              </div>
               <div style={{ ...row, marginTop: 8 }}>
-                <div>
+                <div style={equipmentBox}>
                   <h3>Day Shift Truck(s)</h3>
                   {form.dayTrucks.map((v, i) => {
                     const num = (v || "").replace("C-", "").replace("OTHER", "");
@@ -1045,7 +1029,7 @@ ${issueLines}`;
                   ) : null}
                 </div>
 
-                <div>
+                <div style={equipmentBox}>
                   <h3>Night Shift Truck(s)</h3>
                   {form.nightTrucks.map((v, i) => {
                     const num = (v || "").replace("C-", "").replace("OTHER", "");
@@ -1091,9 +1075,6 @@ ${issueLines}`;
                 </div>
               </div>
 
-              <div style={subsectionDivider}>
-                <div style={subsectionTitle}>Chemical Skids</div>
-              </div>
               <div style={section}>
                 <h3>Chem Add / Chemical Skid(s)</h3>
                 {form.chemicalSkids.map((v, i) => {
