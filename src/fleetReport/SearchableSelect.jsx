@@ -19,6 +19,7 @@ export const SearchableSelect = memo(function SearchableSelect({ value, onChange
         placeholder={placeholder}
         value={value}
         readOnly={!isTypingCustom}
+        onClick={() => setIsOpen(true)}
         onFocus={() => {
           setIsOpen(true);
         }}
