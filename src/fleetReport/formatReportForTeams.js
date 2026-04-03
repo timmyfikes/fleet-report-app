@@ -1,8 +1,8 @@
 import {
-  getTruckPmStatus,
-  getTractorPmStatus,
-  getPumpPmStatus,
-  getGeneratorPmStatus,
+  getTruckPmDetails,
+  getTractorPmDetails,
+  getPumpPmDetails,
+  getGeneratorPmDetails,
   isRealTruckUnit,
 } from "./config";
 
@@ -178,11 +178,13 @@ export const formatReportForTeams = (report) => {
 
   (pm.trucks || []).forEach((item, i) => {
     if (!item?.truck) return;
-    const status = getTruckPmStatus(item, report.date);
+    const details = getTruckPmDetails(item, report.date);
+    const status = details.status;
     pmBlocks.push({
       title: `🛻 ${statusEmoji(status)} ${bold(`Truck ${i + 1}:`)} ${item.truck}`,
       rows: [
         `${bold("Status:")} ${status}`,
+        `${bold("Reason:")} ${details.reasons.join(" | ")}`,
         `${bold("Current Miles:")} ${item.miles || "—"}`,
         `${bold("Current Engine Hours:")} ${item.engineHours || "—"}`,
         `${bold("Miles Service Due At:")} ${item.dueAt || "—"}`,
@@ -194,11 +196,13 @@ export const formatReportForTeams = (report) => {
 
   (pm.tractors || []).forEach((item, i) => {
     if (!item?.tractor) return;
-    const status = getTractorPmStatus(item, report.date);
+    const details = getTractorPmDetails(item, report.date);
+    const status = details.status;
     pmBlocks.push({
       title: `🚜 ${statusEmoji(status)} ${bold(`Tractor ${i + 1}:`)} ${item.tractor}`,
       rows: [
         `${bold("Status:")} ${status}`,
+        `${bold("Reason:")} ${details.reasons.join(" | ")}`,
         `${bold("Current Miles:")} ${item.miles || "—"}`,
         `${bold("Current Hours:")} ${item.hours || "—"}`,
         `${bold("Miles Service Due At:")} ${item.dueAt || "—"}`,
@@ -210,11 +214,13 @@ export const formatReportForTeams = (report) => {
 
   (pm.pumps || []).forEach((item, i) => {
     if (!item?.pump) return;
-    const status = getPumpPmStatus(item);
+    const details = getPumpPmDetails(item);
+    const status = details.status;
     pmBlocks.push({
       title: `🪛 ${statusEmoji(status)} ${bold(`Pump ${i + 1}:`)} ${item.pump}`,
       rows: [
         `${bold("Status:")} ${status}`,
+        `${bold("Reason:")} ${details.reasons.join(" | ")}`,
         `${bold("Current Hours:")} ${item.hours || "—"}`,
         `${bold("Fuel / Air Filters Due At:")} ${item.fuelAirDue || "—"}`,
         `${bold("Oil Filters Due At:")} ${item.oilDue || "—"}`,
@@ -225,11 +231,13 @@ export const formatReportForTeams = (report) => {
 
   (pm.generators || []).forEach((item, i) => {
     if (!item?.unit) return;
-    const status = getGeneratorPmStatus(item);
+    const details = getGeneratorPmDetails(item);
+    const status = details.status;
     pmBlocks.push({
       title: `⚡ ${statusEmoji(status)} ${bold(`Generator ${i + 1}:`)} ${item.unit}`,
       rows: [
         `${bold("Status:")} ${status}`,
+        `${bold("Reason:")} ${details.reasons.join(" | ")}`,
         `${bold("Current Hours:")} ${item.hours || "—"}`,
         `${bold("Hours PM Due At:")} ${item.dueAt || "—"}`,
       ],

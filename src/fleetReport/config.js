@@ -125,7 +125,7 @@ export const toNameCase = (value) =>
 
 export const isRealTruckUnit = (value) => typeof value === "string" && /^C-\d+$/.test(value);
 
-export const getTruckPmStatus = (item, reportDate) => {
+export const getTruckPmDetails = (item, reportDate) => {
   const currentMiles = toNumber(item.miles);
   const dueMiles = toNumber(item.dueAt);
   const currentHours = toNumber(item.engineHours);
@@ -134,6 +134,11 @@ export const getTruckPmStatus = (item, reportDate) => {
   const milesOverdue = currentMiles !== null && dueMiles !== null && currentMiles > dueMiles;
   const hoursOverdue = currentHours !== null && dueHours !== null && currentHours > dueHours;
 
+  const overdueReasons = [];
+  const dueReasons = [];
+  if (milesOverdue) overdueReasons.push("Miles past service due");
+  if (hoursOverdue) overdueReasons.push("Engine hours past service due");
+
   let qcStatus = "OK";
   if (reportDate && item.qcDue) {
     const report = new Date(`${reportDate}T00:00:00`);
@@ -143,21 +148,32 @@ export const getTruckPmStatus = (item, reportDate) => {
 
     if (report > qcDue) {
       qcStatus = "OVERDUE";
+      overdueReasons.push("QC date passed");
     } else if (report >= dayBeforeQc) {
       qcStatus = "DUE";
+      dueReasons.push("QC due within 1 day");
     }
   }
 
-  if (milesOverdue || hoursOverdue || qcStatus === "OVERDUE") return "OVERDUE";
+  if (milesOverdue || hoursOverdue || qcStatus === "OVERDUE") {
+    return { status: "OVERDUE", reasons: overdueReasons };
+  }
 
   const milesDue = currentMiles !== null && dueMiles !== null && currentMiles >= dueMiles - 250;
   const hoursDue = currentHours !== null && dueHours !== null && currentHours >= dueHours - 15;
-  if (milesDue || hoursDue || qcStatus === "DUE") return "DUE";
+  if (milesDue) dueReasons.push("Miles within 250 of service due");
+  if (hoursDue) dueReasons.push("Engine hours within 15 of service due");
 
-  return "OK";
+  if (milesDue || hoursDue || qcStatus === "DUE") {
+    return { status: "DUE", reasons: dueReasons };
+  }
+
+  return { status: "OK", reasons: ["On schedule"] };
 };
 
-export const getTractorPmStatus = (item, reportDate) => {
+export const getTruckPmStatus = (item, reportDate) => getTruckPmDetails(item, reportDate).status;
+
+export const getTractorPmDetails = (item, reportDate) => {
   const currentMiles = toNumber(item.miles);
   const dueMiles = toNumber(item.dueAt);
   const currentHours = toNumber(item.hours);
@@ -166,6 +182,11 @@ export const getTractorPmStatus = (item, reportDate) => {
   const milesOverdue = currentMiles !== null && dueMiles !== null && currentMiles > dueMiles;
   const hoursOverdue = currentHours !== null && dueHours !== null && currentHours > dueHours;
 
+  const overdueReasons = [];
+  const dueReasons = [];
+  if (milesOverdue) overdueReasons.push("Miles past service due");
+  if (hoursOverdue) overdueReasons.push("Hours past service due");
+
   let qcStatus = "OK";
   if (reportDate && item.qcDue) {
     const report = new Date(`${reportDate}T00:00:00`);
@@ -175,42 +196,63 @@ export const getTractorPmStatus = (item, reportDate) => {
 
     if (report > qcDue) {
       qcStatus = "OVERDUE";
+      overdueReasons.push("QC date passed");
     } else if (report >= dayBeforeQc) {
       qcStatus = "DUE";
+      dueReasons.push("QC due within 1 day");
     }
   }
 
-  if (milesOverdue || hoursOverdue || qcStatus === "OVERDUE") return "OVERDUE";
+  if (milesOverdue || hoursOverdue || qcStatus === "OVERDUE") {
+    return { status: "OVERDUE", reasons: overdueReasons };
+  }
 
   const milesDue = currentMiles !== null && dueMiles !== null && currentMiles >= dueMiles - 250;
   const hoursDue = currentHours !== null && dueHours !== null && currentHours >= dueHours - 15;
-  if (milesDue || hoursDue || qcStatus === "DUE") return "DUE";
+  if (milesDue) dueReasons.push("Miles within 250 of service due");
+  if (hoursDue) dueReasons.push("Hours within 15 of service due");
 
-  return "OK";
+  if (milesDue || hoursDue || qcStatus === "DUE") {
+    return { status: "DUE", reasons: dueReasons };
+  }
+
+  return { status: "OK", reasons: ["On schedule"] };
 };
 
-export const getPumpPmStatus = (item) => {
+export const getTractorPmStatus = (item, reportDate) => getTractorPmDetails(item, reportDate).status;
+
+export const getPumpPmDetails = (item) => {
   const currentHours = toNumber(item.hours);
   const fuelAirDue = toNumber(item.fuelAirDue);
   const oilDue = toNumber(item.oilDue);
   const pm1000Due = toNumber(item.pm1000Due);
 
-  const overdue = [fuelAirDue, oilDue, pm1000Due].some((due) => currentHours !== null && due !== null && currentHours > due);
-  if (overdue) return "OVERDUE";
+  const overdueReasons = [];
+  if (currentHours !== null && fuelAirDue !== null && currentHours > fuelAirDue) overdueReasons.push("Fuel/Air filters past due");
+  if (currentHours !== null && oilDue !== null && currentHours > oilDue) overdueReasons.push("Oil filters past due");
+  if (currentHours !== null && pm1000Due !== null && currentHours > pm1000Due) overdueReasons.push("1000 HR PM past due");
+  if (overdueReasons.length) return { status: "OVERDUE", reasons: overdueReasons };
 
-  const dueSoon = [fuelAirDue, oilDue, pm1000Due].some((due) => currentHours !== null && due !== null && currentHours >= due - 24);
-  if (dueSoon) return "DUE";
+  const dueReasons = [];
+  if (currentHours !== null && fuelAirDue !== null && currentHours >= fuelAirDue - 24) dueReasons.push("Fuel/Air filters due within 24 hours");
+  if (currentHours !== null && oilDue !== null && currentHours >= oilDue - 24) dueReasons.push("Oil filters due within 24 hours");
+  if (currentHours !== null && pm1000Due !== null && currentHours >= pm1000Due - 24) dueReasons.push("1000 HR PM due within 24 hours");
+  if (dueReasons.length) return { status: "DUE", reasons: dueReasons };
 
-  return "OK";
+  return { status: "OK", reasons: ["On schedule"] };
 };
 
-export const getGeneratorPmStatus = (item) => {
+export const getPumpPmStatus = (item) => getPumpPmDetails(item).status;
+
+export const getGeneratorPmDetails = (item) => {
   const currentHours = toNumber(item.hours);
   const dueHours = toNumber(item.dueAt);
-  if (currentHours !== null && dueHours !== null && currentHours > dueHours) return "OVERDUE";
-  if (currentHours !== null && dueHours !== null && currentHours >= dueHours - 24) return "DUE";
-  return "OK";
+  if (currentHours !== null && dueHours !== null && currentHours > dueHours) return { status: "OVERDUE", reasons: ["Hours PM past due"] };
+  if (currentHours !== null && dueHours !== null && currentHours >= dueHours - 24) return { status: "DUE", reasons: ["Hours PM due within 24 hours"] };
+  return { status: "OK", reasons: ["On schedule"] };
 };
+
+export const getGeneratorPmStatus = (item) => getGeneratorPmDetails(item).status;
 
 export const blankRental = () => ({ unit: "", status: "Active", description: "", descriptionOther: "", rentedFrom: "", rentedFromOther: "" });
 export const blankChemical = () => ({ chemical: "", chemicalOther: "", amount: "" });

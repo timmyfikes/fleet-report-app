@@ -1,10 +1,10 @@
 import React, { memo } from "react";
 import {
   getStatusColors,
-  getTruckPmStatus,
-  getTractorPmStatus,
-  getPumpPmStatus,
-  getGeneratorPmStatus,
+  getTruckPmDetails,
+  getTractorPmDetails,
+  getPumpPmDetails,
+  getGeneratorPmDetails,
   isRealTruckUnit,
 } from "./config";
 
@@ -12,15 +12,16 @@ export const SavedReportView = memo(function SavedReportView({ report }) {
   if (!report) return null;
 
   const renderPmCard = (title, item, keyName) => {
-    const status = keyName === "Truck"
-      ? getTruckPmStatus(item, report.date)
+    const details = keyName === "Truck"
+      ? getTruckPmDetails(item, report.date)
       : keyName === "Tractor"
-        ? getTractorPmStatus(item, report.date)
+        ? getTractorPmDetails(item, report.date)
         : keyName === "Pump"
-          ? getPumpPmStatus(item)
+          ? getPumpPmDetails(item)
           : keyName === "Generator"
-            ? getGeneratorPmStatus(item)
-            : item.status;
+            ? getGeneratorPmDetails(item)
+            : { status: item.status, reasons: [] };
+    const status = details.status;
     const statusColors = getStatusColors(status);
     return (
       <div style={{ ...statusColors, padding: 10, borderRadius: 10, marginBottom: 8 }}>
@@ -38,6 +39,7 @@ export const SavedReportView = memo(function SavedReportView({ report }) {
         {item.pm1000Due ? <div><strong>1000 HR PM Due At:</strong> {item.pm1000Due}</div> : null}
         {keyName === "Generator" && item.dueAt ? <div><strong>Hours PM Due At:</strong> {item.dueAt}</div> : null}
         <div><strong>Status:</strong> {status}</div>
+        <div><strong>Why:</strong> {details.reasons.join(" | ") || "—"}</div>
       </div>
     );
   };
