@@ -16,6 +16,7 @@ export const formatReportForTeams = (report) => {
   const wsChemicals = report.wsChemicals || [];
   const fuelEntries = report.fuel?.entries || [];
   const pm = report.pm || {};
+  const SECTION_DIVIDER = "------------------------";
 
   const bold = (text) =>
     String(text)
@@ -32,9 +33,9 @@ export const formatReportForTeams = (report) => {
   const pushSection = (title) => {
     if (lines.length) {
       lines.push("");
-      lines.push("────────────────────");
-      lines.push("");
+      lines.push(SECTION_DIVIDER);
     }
+    lines.push("");
     lines.push(title);
   };
 
@@ -224,10 +225,11 @@ export const formatReportForTeams = (report) => {
 
   (pm.generators || []).forEach((item, i) => {
     if (!item?.unit) return;
+    const status = getGeneratorPmStatus(item);
     pmBlocks.push({
-      title: `⚡ ${bold(`Generator ${i + 1}:`)} ${item.unit}`,
+      title: `⚡ ${statusEmoji(status)} ${bold(`Generator ${i + 1}:`)} ${item.unit}`,
       rows: [
-        `${bold("Status:")} ${getGeneratorPmStatus(item)}`,
+        `${bold("Status:")} ${status}`,
         `${bold("Current Hours:")} ${item.hours || "—"}`,
         `${bold("Hours PM Due At:")} ${item.dueAt || "—"}`,
       ],
