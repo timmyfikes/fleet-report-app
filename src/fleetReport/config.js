@@ -254,6 +254,13 @@ export const getGeneratorPmDetails = (item) => {
 
 export const getGeneratorPmStatus = (item) => getGeneratorPmDetails(item).status;
 
+export const formatPmStatusLabel = (details) => {
+  if (!details || !details.status) return "—";
+  if (details.status === "OK") return "OK";
+  const reason = details.reasons?.[0];
+  return reason ? `${details.status} - ${reason}` : details.status;
+};
+
 export const blankRental = () => ({ unit: "", status: "Active", description: "", descriptionOther: "", rentedFrom: "", rentedFromOther: "" });
 export const blankChemical = () => ({ chemical: "", chemicalOther: "", amount: "" });
 export const blankTruckPm = () => ({ truck: "", miles: "", engineHours: "", dueAt: "", engineHoursDueAt: "", qcDue: "", status: "OK" });

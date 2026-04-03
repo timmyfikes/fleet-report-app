@@ -17,6 +17,7 @@ import {
   getTractorPmDetails,
   getPumpPmDetails,
   getGeneratorPmDetails,
+  formatPmStatusLabel,
   blankGeneratorPm,
   blankPumpPm,
   blankTractorPm,
@@ -577,14 +578,6 @@ ${issueLines}`;
       if (typeof el.focus === "function") el.focus();
     }, 250);
   }, []);
-
-  const getPmReasonStyle = (status) => ({
-    gridColumn: "1 / -1",
-    fontSize: 12,
-    fontWeight: 700,
-    marginTop: 2,
-    color: status === "OVERDUE" ? "#991b1b" : status === "DUE" ? "#854d0e" : "#166534",
-  });
 
   const jumpToCopyCta = useCallback((fleet) => {
     setCopyCtaMessage(`Report saved. You can now copy this for Fleet ${fleet} Teams chat.`);
@@ -1671,8 +1664,7 @@ style={selectInput}
                       <div><label style={getPmLabelStyle("pm-trucks-0-dueAt")}>Miles Service Due At{getPmRequiredSuffix("pm-trucks-0-dueAt")}</label><input id="pm-trucks-0-dueAt" style={getPmInputStyle("pm-trucks-0-dueAt")} type="text" inputMode="numeric" pattern="[0-9]*" value={item.dueAt} onChange={(e) => updatePm("trucks", 0, "dueAt", e.target.value.replace(/[^0-9]/g, ""))} /></div>
                       <div><label style={getPmLabelStyle("pm-trucks-0-engineHoursDueAt")}>Engine Hours Service Due At{getPmRequiredSuffix("pm-trucks-0-engineHoursDueAt")}</label><input id="pm-trucks-0-engineHoursDueAt" style={getPmInputStyle("pm-trucks-0-engineHoursDueAt")} type="text" inputMode="numeric" pattern="[0-9]*" value={item.engineHoursDueAt || ""} onChange={(e) => updatePm("trucks", 0, "engineHoursDueAt", e.target.value.replace(/[^0-9]/g, ""))} /></div>
                       <div><label style={getPmLabelStyle("pm-trucks-0-qcDue")}>QC Due Date{getPmRequiredSuffix("pm-trucks-0-qcDue")}</label><input id="pm-trucks-0-qcDue" style={getPmInputStyle("pm-trucks-0-qcDue")} type="date" value={item.qcDue} onChange={(e) => updatePm("trucks", 0, "qcDue", e.target.value)} /></div>
-                      <div><label style={label}>Status</label><input style={{ ...input, background: "#f8fafc", fontWeight: 700 }} value={truckStatus} readOnly /></div>
-                      <div style={getPmReasonStyle(truckStatus)}>Why: {truckPm.reasons.join(" | ")}</div>
+                      <div><label style={label}>Status</label><input style={{ ...input, background: "#f8fafc", fontWeight: 700 }} value={formatPmStatusLabel(truckPm)} readOnly /></div>
                     </div>
                   </div>
                 );
@@ -1692,8 +1684,7 @@ style={selectInput}
                       <div><label style={getPmLabelStyle("pm-trucks-1-dueAt")}>Miles Service Due At{getPmRequiredSuffix("pm-trucks-1-dueAt")}</label><input id="pm-trucks-1-dueAt" style={getPmInputStyle("pm-trucks-1-dueAt")} type="text" inputMode="numeric" pattern="[0-9]*" value={item.dueAt} onChange={(e) => updatePm("trucks", 1, "dueAt", e.target.value.replace(/[^0-9]/g, ""))} /></div>
                       <div><label style={getPmLabelStyle("pm-trucks-1-engineHoursDueAt")}>Engine Hours Service Due At{getPmRequiredSuffix("pm-trucks-1-engineHoursDueAt")}</label><input id="pm-trucks-1-engineHoursDueAt" style={getPmInputStyle("pm-trucks-1-engineHoursDueAt")} type="text" inputMode="numeric" pattern="[0-9]*" value={item.engineHoursDueAt || ""} onChange={(e) => updatePm("trucks", 1, "engineHoursDueAt", e.target.value.replace(/[^0-9]/g, ""))} /></div>
                       <div><label style={getPmLabelStyle("pm-trucks-1-qcDue")}>QC Due Date{getPmRequiredSuffix("pm-trucks-1-qcDue")}</label><input id="pm-trucks-1-qcDue" style={getPmInputStyle("pm-trucks-1-qcDue")} type="date" value={item.qcDue} onChange={(e) => updatePm("trucks", 1, "qcDue", e.target.value)} /></div>
-                      <div><label style={label}>Status</label><input style={{ ...input, background: "#f8fafc", fontWeight: 700 }} value={truckStatus} readOnly /></div>
-                      <div style={getPmReasonStyle(truckStatus)}>Why: {truckPm.reasons.join(" | ")}</div>
+                      <div><label style={label}>Status</label><input style={{ ...input, background: "#f8fafc", fontWeight: 700 }} value={formatPmStatusLabel(truckPm)} readOnly /></div>
                     </div>
                   </div>
                 );
@@ -1714,8 +1705,7 @@ style={selectInput}
                       <div><label style={getPmLabelStyle(`pm-tractors-${i}-dueAt`)}>Miles Service Due At{getPmRequiredSuffix(`pm-tractors-${i}-dueAt`)}</label><input id={`pm-tractors-${i}-dueAt`} style={getPmInputStyle(`pm-tractors-${i}-dueAt`)} type="text" inputMode="numeric" pattern="[0-9]*" value={item.dueAt} onChange={(e) => updatePm("tractors", i, "dueAt", e.target.value.replace(/[^0-9]/g, ""))} /></div>
                       <div><label style={getPmLabelStyle(`pm-tractors-${i}-hoursDueAt`)}>Hours Service Due At{getPmRequiredSuffix(`pm-tractors-${i}-hoursDueAt`)}</label><input id={`pm-tractors-${i}-hoursDueAt`} style={getPmInputStyle(`pm-tractors-${i}-hoursDueAt`)} type="text" inputMode="numeric" pattern="[0-9]*" value={item.hoursDueAt || ""} onChange={(e) => updatePm("tractors", i, "hoursDueAt", e.target.value.replace(/[^0-9]/g, ""))} /></div>
                       <div><label style={getPmLabelStyle(`pm-tractors-${i}-qcDue`)}>QC Due Date{getPmRequiredSuffix(`pm-tractors-${i}-qcDue`)}</label><input id={`pm-tractors-${i}-qcDue`} style={getPmInputStyle(`pm-tractors-${i}-qcDue`)} type="date" value={item.qcDue || ""} onChange={(e) => updatePm("tractors", i, "qcDue", e.target.value)} /></div>
-                      <div><label style={label}>Status</label><input style={{ ...input, background: "#f8fafc", fontWeight: 700 }} value={tractorStatus} readOnly /></div>
-                      <div style={getPmReasonStyle(tractorStatus)}>Why: {tractorPm.reasons.join(" | ")}</div>
+                      <div><label style={label}>Status</label><input style={{ ...input, background: "#f8fafc", fontWeight: 700 }} value={formatPmStatusLabel(tractorPm)} readOnly /></div>
                     </div>
                   </div>
                 );
@@ -1735,8 +1725,7 @@ style={selectInput}
                       <div><label style={getPmLabelStyle(`pm-pumps-${i}-fuelAirDue`)}>Fuel / Air Filters Due At{getPmRequiredSuffix(`pm-pumps-${i}-fuelAirDue`)}</label><input id={`pm-pumps-${i}-fuelAirDue`} style={getPmInputStyle(`pm-pumps-${i}-fuelAirDue`)} type="text" inputMode="numeric" pattern="[0-9]*" value={item.fuelAirDue} onChange={(e) => updatePm("pumps", i, "fuelAirDue", e.target.value.replace(/[^0-9]/g, ""))} /></div>
                       <div><label style={getPmLabelStyle(`pm-pumps-${i}-oilDue`)}>Oil Filters Due At{getPmRequiredSuffix(`pm-pumps-${i}-oilDue`)}</label><input id={`pm-pumps-${i}-oilDue`} style={getPmInputStyle(`pm-pumps-${i}-oilDue`)} type="text" inputMode="numeric" pattern="[0-9]*" value={item.oilDue} onChange={(e) => updatePm("pumps", i, "oilDue", e.target.value.replace(/[^0-9]/g, ""))} /></div>
                       <div><label style={getPmLabelStyle(`pm-pumps-${i}-pm1000Due`)}>1000 HR PM Due At{getPmRequiredSuffix(`pm-pumps-${i}-pm1000Due`)}</label><input id={`pm-pumps-${i}-pm1000Due`} style={getPmInputStyle(`pm-pumps-${i}-pm1000Due`)} type="text" inputMode="numeric" pattern="[0-9]*" value={item.pm1000Due} onChange={(e) => updatePm("pumps", i, "pm1000Due", e.target.value.replace(/[^0-9]/g, ""))} /></div>
-                      <div><label style={label}>Status</label><input style={{ ...input, background: "#f8fafc", fontWeight: 700 }} value={pumpStatus} readOnly /></div>
-                      <div style={getPmReasonStyle(pumpStatus)}>Why: {pumpPm.reasons.join(" | ")}</div>
+                      <div><label style={label}>Status</label><input style={{ ...input, background: "#f8fafc", fontWeight: 700 }} value={formatPmStatusLabel(pumpPm)} readOnly /></div>
                     </div>
                   </div>
                 );
@@ -1763,8 +1752,7 @@ style={selectInput}
                         <div><label style={label}>Generator Unit</label><input style={{ ...input, background: "#f8fafc", fontWeight: 700 }} value={unit} readOnly /></div>
                         <div><label style={getPmLabelStyle(`pm-generators-${i}-hours`)}>Current Hours{getPmRequiredSuffix(`pm-generators-${i}-hours`)}</label><input id={`pm-generators-${i}-hours`} style={getPmInputStyle(`pm-generators-${i}-hours`)} type="text" inputMode="numeric" pattern="[0-9]*" value={item.hours} onChange={(e) => updatePm("generators", i, "unit", unit) || updatePm("generators", i, "hours", e.target.value.replace(/[^0-9]/g, ""))} /></div>
                         <div><label style={getPmLabelStyle(`pm-generators-${i}-dueAt`)}>Hours PM Due At{getPmRequiredSuffix(`pm-generators-${i}-dueAt`)}</label><input id={`pm-generators-${i}-dueAt`} style={getPmInputStyle(`pm-generators-${i}-dueAt`)} type="text" inputMode="numeric" pattern="[0-9]*" value={item.dueAt} onChange={(e) => updatePm("generators", i, "unit", unit) || updatePm("generators", i, "dueAt", e.target.value.replace(/[^0-9]/g, ""))} /></div>
-                        <div><label style={label}>Status</label><input style={{ ...input, background: "#f8fafc", fontWeight: 700 }} value={generatorStatus} readOnly /></div>
-                        <div style={getPmReasonStyle(generatorStatus)}>Why: {generatorPm.reasons.join(" | ")}</div>
+                        <div><label style={label}>Status</label><input style={{ ...input, background: "#f8fafc", fontWeight: 700 }} value={formatPmStatusLabel(generatorPm)} readOnly /></div>
                       </div>
                     </div>
                   );

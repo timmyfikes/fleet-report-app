@@ -3,6 +3,7 @@ import {
   getTractorPmDetails,
   getPumpPmDetails,
   getGeneratorPmDetails,
+  formatPmStatusLabel,
   isRealTruckUnit,
 } from "./config";
 
@@ -183,8 +184,7 @@ export const formatReportForTeams = (report) => {
     pmBlocks.push({
       title: `🛻 ${statusEmoji(status)} ${bold(`Truck ${i + 1}:`)} ${item.truck}`,
       rows: [
-        `${bold("Status:")} ${status}`,
-        `${bold("Reason:")} ${details.reasons.join(" | ")}`,
+        `${bold("Status:")} ${formatPmStatusLabel(details)}`,
         `${bold("Current Miles:")} ${item.miles || "—"}`,
         `${bold("Current Engine Hours:")} ${item.engineHours || "—"}`,
         `${bold("Miles Service Due At:")} ${item.dueAt || "—"}`,
@@ -201,8 +201,7 @@ export const formatReportForTeams = (report) => {
     pmBlocks.push({
       title: `🚜 ${statusEmoji(status)} ${bold(`Tractor ${i + 1}:`)} ${item.tractor}`,
       rows: [
-        `${bold("Status:")} ${status}`,
-        `${bold("Reason:")} ${details.reasons.join(" | ")}`,
+        `${bold("Status:")} ${formatPmStatusLabel(details)}`,
         `${bold("Current Miles:")} ${item.miles || "—"}`,
         `${bold("Current Hours:")} ${item.hours || "—"}`,
         `${bold("Miles Service Due At:")} ${item.dueAt || "—"}`,
@@ -219,8 +218,7 @@ export const formatReportForTeams = (report) => {
     pmBlocks.push({
       title: `🪛 ${statusEmoji(status)} ${bold(`Pump ${i + 1}:`)} ${item.pump}`,
       rows: [
-        `${bold("Status:")} ${status}`,
-        `${bold("Reason:")} ${details.reasons.join(" | ")}`,
+        `${bold("Status:")} ${formatPmStatusLabel(details)}`,
         `${bold("Current Hours:")} ${item.hours || "—"}`,
         `${bold("Fuel / Air Filters Due At:")} ${item.fuelAirDue || "—"}`,
         `${bold("Oil Filters Due At:")} ${item.oilDue || "—"}`,
@@ -236,8 +234,7 @@ export const formatReportForTeams = (report) => {
     pmBlocks.push({
       title: `⚡ ${statusEmoji(status)} ${bold(`Generator ${i + 1}:`)} ${item.unit}`,
       rows: [
-        `${bold("Status:")} ${status}`,
-        `${bold("Reason:")} ${details.reasons.join(" | ")}`,
+        `${bold("Status:")} ${formatPmStatusLabel(details)}`,
         `${bold("Current Hours:")} ${item.hours || "—"}`,
         `${bold("Hours PM Due At:")} ${item.dueAt || "—"}`,
       ],

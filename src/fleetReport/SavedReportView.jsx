@@ -5,6 +5,7 @@ import {
   getTractorPmDetails,
   getPumpPmDetails,
   getGeneratorPmDetails,
+  formatPmStatusLabel,
   isRealTruckUnit,
 } from "./config";
 
@@ -38,8 +39,7 @@ export const SavedReportView = memo(function SavedReportView({ report }) {
         {item.oilDue ? <div><strong>Oil Filters Due At:</strong> {item.oilDue}</div> : null}
         {item.pm1000Due ? <div><strong>1000 HR PM Due At:</strong> {item.pm1000Due}</div> : null}
         {keyName === "Generator" && item.dueAt ? <div><strong>Hours PM Due At:</strong> {item.dueAt}</div> : null}
-        <div><strong>Status:</strong> {status}</div>
-        <div><strong>Why:</strong> {details.reasons.join(" | ") || "—"}</div>
+        <div><strong>Status:</strong> {formatPmStatusLabel(details)}</div>
       </div>
     );
   };
