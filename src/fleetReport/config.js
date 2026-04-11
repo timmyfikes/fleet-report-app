@@ -318,7 +318,7 @@ export const createInitialState = (fleet = "1") => ({
   issues: [""],
 });
 
-export const fleetTabs = ["1", "2", "3", "4", "5", "6", "7"];
+export const fleetTabs = ["1", "2", "3", "4", "5", "6", "7", "8"];
 
 export const FLEET_DRAFT_STORAGE_PREFIX = "fleet-report-draft-v1";
 export const getFleetDraftKey = (fleet) => `${FLEET_DRAFT_STORAGE_PREFIX}-${fleet}`;
