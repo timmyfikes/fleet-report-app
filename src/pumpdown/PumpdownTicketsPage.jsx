@@ -573,7 +573,7 @@ const isIdkTicketPastRemovalDate = (ticket) => {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const cutoff = new Date(today);
-  cutoff.setDate(today.getDate() - 25);
+  cutoff.setDate(today.getDate() - 18);
   return endDate < cutoff;
 };
 
