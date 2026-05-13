@@ -1,9 +1,33 @@
 import React from "react";
 import { card, input } from "../config";
 
-export function HeaderCard({ isMobile, activeFleet, fleetTabs, setActiveFleet, setShowHelp, wsEnergyLogo }) {
+export function HeaderCard({ isMobile, activeFleet, fleetTabs, setActiveFleet, setShowHelp, wsEnergyLogo, onOpenPumpdown }) {
   return (
     <div style={{ ...card, marginBottom: 16, position: "relative" }}>
+      {onOpenPumpdown ? (
+        <button
+          type="button"
+          onClick={onOpenPumpdown}
+          style={{
+            position: isMobile ? "static" : "absolute",
+            top: isMobile ? undefined : 14,
+            left: isMobile ? undefined : 14,
+            ...input,
+            width: "auto",
+            padding: "8px 12px",
+            background: "#111827",
+            border: "none",
+            color: "#ffffff",
+            WebkitTextFillColor: "#ffffff",
+            fontWeight: 700,
+            fontSize: 13,
+            cursor: "pointer",
+            marginBottom: isMobile ? 10 : 0,
+          }}
+        >
+          Pumpdown Tickets
+        </button>
+      ) : null}
       <button
         type="button"
         onClick={() => setShowHelp(true)}

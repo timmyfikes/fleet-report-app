@@ -43,15 +43,41 @@ import { PreviewPanel } from "./fleetReport/components/PreviewPanel";
 import { SavedReportsPanel } from "./fleetReport/components/SavedReportsPanel";
 import { DeleteAccessModal } from "./fleetReport/components/DeleteAccessModal";
 import { HelpModal } from "./fleetReport/components/HelpModal";
+import { PumpdownTicketsPage } from "./pumpdown/PumpdownTicketsPage";
+
+const getInitialPage = () => {
+  if (typeof window === "undefined") return "fleet";
+  return window.location.hash === "#/pumpdown" ? "pumpdown" : "fleet";
+};
 
 export default function FleetReportApp() {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [activePage, setActivePage] = useState(getInitialPage);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
+
+  useEffect(() => {
+    const syncPageFromHash = () => {
+      setActivePage(window.location.hash === "#/pumpdown" ? "pumpdown" : "fleet");
+    };
+    window.addEventListener("hashchange", syncPageFromHash);
+    syncPageFromHash();
+    return () => window.removeEventListener("hashchange", syncPageFromHash);
+  }, []);
+
+  const navigateToPage = useCallback((page) => {
+    const nextHash = page === "pumpdown" ? "#/pumpdown" : "#/";
+    if (window.location.hash !== nextHash) {
+      window.location.hash = nextHash;
+    }
+    setActivePage(page);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, []);
+
   const [activeFleet, setActiveFleet] = useState("1");
   const [fleetForms, setFleetForms] = useState(() =>
     fleetTabs.reduce((acc, fleet) => {
@@ -784,6 +810,16 @@ ${issueLines}`;
     setTimeout(() => setLoadMessage(""), NOTIFICATION_MS);
   }, []);
 
+  if (activePage === "pumpdown") {
+    return (
+      <PumpdownTicketsPage
+        isMobile={isMobile}
+        onBack={() => navigateToPage("fleet")}
+        wsEnergyLogo={wsEnergyLogo}
+      />
+    );
+  }
+
   return (
     <div style={{ background: "linear-gradient(180deg, #f3f7fc 0%, #f8fafc 45%, #f8fafc 100%)", minHeight: "100vh", padding: isMobile ? 12 : 18, colorScheme: "light", color: "#111827" }}>
       <div style={{ maxWidth: 1140, margin: "0 auto" }}>
@@ -794,6 +830,7 @@ ${issueLines}`;
           setActiveFleet={setActiveFleet}
           setShowHelp={setShowHelp}
           wsEnergyLogo={wsEnergyLogo}
+          onOpenPumpdown={() => navigateToPage("pumpdown")}
         />
 
         <div style={{
