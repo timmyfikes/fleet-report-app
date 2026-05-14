@@ -14,6 +14,7 @@ import {
 
 const PUMPDOWN_PASSWORD = "1775";
 const STORAGE_KEY = "pumpdownTicketsDraft";
+const BACKUP_STORAGE_KEY = "pumpdownTicketsDraftBackup";
 const ACCESS_KEY = "pumpdownTicketsUnlocked";
 const DIVIDER = "—————————";
 
@@ -583,20 +584,9 @@ const getDateDetails = (ticket) => {
   return `(${start} to ${end})`;
 };
 
+
 const ticketHasContent = (ticket) =>
   Boolean(getCustomerName(ticket) || ticket.job || ticket.ticket || ticket.startDate || ticket.endDate);
-
-const formatJobLine = (ticket) => {
-  const dateDetails = getDateDetails(ticket);
-  return [ticket.job, dateDetails].filter(Boolean).join(" ");
-};
-
-const formatTicketLine = (ticket) => {
-  const status = getStatusLabel(ticket.status);
-  if (!ticket.ticket && !status) return "";
-  if (!ticket.ticket) return status;
-  return `${ticket.ticket} - ${status}`;
-};
 
 const getStatusCounts = (tickets) => {
   const activeTickets = tickets.filter(ticketHasContent);
@@ -606,37 +596,60 @@ const getStatusCounts = (tickets) => {
   }));
 };
 
-const formatPumpdownTickets = (tickets) => {
-  const activeTickets = tickets.filter(ticketHasContent);
-  const lines = ["-PUMPDOWN TICKETS-", DIVIDER];
-
-  ticketSectionOptions.forEach((sectionOption, index) => {
-    lines.push(sectionOption.teamsTitle);
-    activeTickets
-      .filter((ticket) => getDisplaySection(ticket) === sectionOption.value)
-      .sort(compareTicketsForSection(sectionOption.value))
-      .forEach((ticket) => {
-        const customer = getCustomerName(ticket);
-        const jobLine = formatJobLine(ticket);
-        const ticketLine = formatTicketLine(ticket);
-        if (sectionOption.value === "PendingApproval" || sectionOption.value === "SentToCustomer" || sectionOption.value === "Completed") {
-          lines.push(`From ${getHomeSectionLabel(ticket.fleet)}`);
-        }
-        if (customer) lines.push(customer);
-        if (jobLine) lines.push(jobLine);
-        if (ticketLine) lines.push(ticketLine);
-      });
-
-    if (index < ticketSectionOptions.length - 1) lines.push(DIVIDER);
+const toBoldText = (value) =>
+  String(value || "").replace(/[A-Za-z0-9]/g, (char) => {
+    const code = char.charCodeAt(0);
+    if (code >= 65 && code <= 90) return String.fromCodePoint(0x1d400 + code - 65);
+    if (code >= 97 && code <= 122) return String.fromCodePoint(0x1d41a + code - 97);
+    return String.fromCodePoint(0x1d7ce + code - 48);
   });
 
-  lines.push(DIVIDER);
-  lines.push("QUICK COUNTS");
+const toSectionHeaderText = (value) => toBoldText(value);
+
+const appendTicketForTeams = (lines, ticket, shouldShowFleet) => {
+  const customer = getCustomerName(ticket) || "Customer TBD";
+  const dateDetails = getDateDetails(ticket);
+  const status = getStatusLabel(ticket.status);
+
+  if (shouldShowFleet) lines.push(`From ${getHomeSectionLabel(ticket.fleet)}`);
+  lines.push(toBoldText(customer));
+  if (ticket.job || dateDetails) lines.push([ticket.job, dateDetails].filter(Boolean).join(" "));
+  if (ticket.ticket && status) lines.push(`${ticket.ticket} - ${status}`);
+  else if (ticket.ticket) lines.push(ticket.ticket);
+  else if (status) lines.push(status);
+  lines.push("");
+};
+
+const formatPumpdownTickets = (tickets) => {
+  const activeTickets = tickets.filter(ticketHasContent);
+  const lines = [toBoldText("-PUMPDOWN TICKETS-"), DIVIDER];
+
+  ticketSectionOptions.forEach((sectionOption) => {
+    const sectionTickets = activeTickets
+      .filter((ticket) => getDisplaySection(ticket) === sectionOption.value)
+      .sort(compareTicketsForSection(sectionOption.value));
+
+    lines.push(toSectionHeaderText(sectionOption.teamsTitle));
+    lines.push("");
+
+    sectionTickets.forEach((ticket) => {
+      appendTicketForTeams(
+        lines,
+        ticket,
+        sectionOption.value === "PendingApproval" || sectionOption.value === "SentToCustomer" || sectionOption.value === "Completed"
+      );
+    });
+
+    lines.push(DIVIDER);
+  });
+
+  lines.push(toSectionHeaderText("QUICK COUNTS"));
+  lines.push("");
   getStatusCounts(tickets).forEach((status) => {
     lines.push(`${status.label}: ${status.count}`);
   });
 
-  return lines.join("\n");
+  return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 };
 
 export function PumpdownTicketsPage({ isMobile, onBack, wsEnergyLogo }) {
@@ -657,7 +670,12 @@ export function PumpdownTicketsPage({ isMobile, onBack, wsEnergyLogo }) {
 
   useEffect(() => {
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(visibleTickets));
+      const nextDraft = JSON.stringify(visibleTickets);
+      const currentDraft = window.localStorage.getItem(STORAGE_KEY);
+      if (currentDraft && currentDraft !== nextDraft) {
+        window.localStorage.setItem(BACKUP_STORAGE_KEY, currentDraft);
+      }
+      window.localStorage.setItem(STORAGE_KEY, nextDraft);
     } catch (error) {
       console.error("Unable to save pumpdown tickets", error);
     }
