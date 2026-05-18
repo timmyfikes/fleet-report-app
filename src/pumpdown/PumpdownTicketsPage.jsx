@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   addActionButton,
   card,
@@ -10,12 +10,16 @@ import {
   row,
   section,
   selectInput,
+  supabase,
 } from "../fleetReport/config";
 
 const PUMPDOWN_PASSWORD = "1775";
 const STORAGE_KEY = "pumpdownTicketsDraft";
 const BACKUP_STORAGE_KEY = "pumpdownTicketsDraftBackup";
 const ACCESS_KEY = "pumpdownTicketsUnlocked";
+const SHARED_TICKETS_TABLE = "pumpdown_ticket_state";
+const SHARED_TICKETS_ID = "current";
+const SHARED_SAVE_DELAY_MS = 700;
 const DIVIDER = "—————————";
 
 const homeSectionOptions = [
@@ -469,6 +473,21 @@ const loadStoredTickets = () => {
   }
 };
 
+const saveTicketsToLocalStorage = (tickets) => {
+  if (typeof window === "undefined") return;
+
+  try {
+    const nextDraft = JSON.stringify(tickets);
+    const currentDraft = window.localStorage.getItem(STORAGE_KEY);
+    if (currentDraft && currentDraft !== nextDraft) {
+      window.localStorage.setItem(BACKUP_STORAGE_KEY, currentDraft);
+    }
+    window.localStorage.setItem(STORAGE_KEY, nextDraft);
+  } catch (error) {
+    console.error("Unable to save pumpdown tickets", error);
+  }
+};
+
 const formatShortDate = (dateValue) => {
   if (!dateValue) return "";
   const [, month, day] = dateValue.split("-");
@@ -660,6 +679,11 @@ export function PumpdownTicketsPage({ isMobile, onBack, wsEnergyLogo }) {
   const [password, setPassword] = useState("");
   const [passwordError, setPasswordError] = useState("");
   const [tickets, setTickets] = useState(loadStoredTickets);
+  const initialTicketsRef = useRef(tickets);
+  const [hasLoadedSharedTickets, setHasLoadedSharedTickets] = useState(!supabase);
+  const [canSaveSharedTickets, setCanSaveSharedTickets] = useState(false);
+  const [syncMessage, setSyncMessage] = useState(supabase ? "Loading shared tickets..." : "Using local ticket backup");
+  const [syncMessageType, setSyncMessageType] = useState(supabase ? "info" : "warning");
   const [newTicketSection, setNewTicketSection] = useState("1");
   const [copyMessage, setCopyMessage] = useState("");
 
@@ -669,17 +693,87 @@ export function PumpdownTicketsPage({ isMobile, onBack, wsEnergyLogo }) {
   );
 
   useEffect(() => {
-    try {
-      const nextDraft = JSON.stringify(visibleTickets);
-      const currentDraft = window.localStorage.getItem(STORAGE_KEY);
-      if (currentDraft && currentDraft !== nextDraft) {
-        window.localStorage.setItem(BACKUP_STORAGE_KEY, currentDraft);
+    let ignore = false;
+
+    const loadSharedTickets = async () => {
+      if (!supabase) {
+        setHasLoadedSharedTickets(true);
+        setCanSaveSharedTickets(false);
+        return;
       }
-      window.localStorage.setItem(STORAGE_KEY, nextDraft);
-    } catch (error) {
-      console.error("Unable to save pumpdown tickets", error);
-    }
-  }, [visibleTickets]);
+
+      try {
+        const { data, error } = await supabase
+          .from(SHARED_TICKETS_TABLE)
+          .select("tickets")
+          .eq("id", SHARED_TICKETS_ID)
+          .maybeSingle();
+
+        if (error) throw error;
+        if (ignore) return;
+
+        if (Array.isArray(data?.tickets)) {
+          const sharedTickets = data.tickets.map(normalizeTicket);
+          setTickets(sharedTickets);
+          saveTicketsToLocalStorage(sharedTickets);
+          setCanSaveSharedTickets(true);
+          setSyncMessage("Shared tickets loaded");
+          setSyncMessageType("success");
+          return;
+        }
+
+        const localTickets = initialTicketsRef.current.map(normalizeTicket);
+        setTickets(localTickets);
+        saveTicketsToLocalStorage(localTickets);
+        setCanSaveSharedTickets(false);
+        setSyncMessage("Shared tickets need Supabase seed");
+        setSyncMessageType("warning");
+      } catch (error) {
+        console.error("Unable to load shared pumpdown tickets", error);
+        if (!ignore) {
+          setCanSaveSharedTickets(false);
+          setSyncMessage("Using local backup; shared tickets are unavailable");
+          setSyncMessageType("warning");
+        }
+      } finally {
+        if (!ignore) setHasLoadedSharedTickets(true);
+      }
+    };
+
+    loadSharedTickets();
+
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    saveTicketsToLocalStorage(visibleTickets);
+
+    if (!supabase || !hasLoadedSharedTickets || !canSaveSharedTickets) return undefined;
+
+    const timeoutId = window.setTimeout(async () => {
+      try {
+        const { error } = await supabase
+          .from(SHARED_TICKETS_TABLE)
+          .upsert({
+            id: SHARED_TICKETS_ID,
+            tickets: visibleTickets,
+            updated_at: new Date().toISOString(),
+          });
+
+        if (error) throw error;
+        setSyncMessage("Shared tickets saved");
+        setSyncMessageType("success");
+      } catch (error) {
+        console.error("Unable to save shared pumpdown tickets", error);
+        setSyncMessage("Saved locally; shared save failed");
+        setSyncMessageType("error");
+      }
+    }, SHARED_SAVE_DELAY_MS);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [canSaveSharedTickets, hasLoadedSharedTickets, visibleTickets]);
 
   const groupedTickets = useMemo(
     () =>
@@ -1007,6 +1101,7 @@ export function PumpdownTicketsPage({ isMobile, onBack, wsEnergyLogo }) {
               <span style={getStatusPillStyle("need to complete")}>{activeTicketCount} active</span>
               <span style={getStatusPillStyle("pending approval")}>{statusCounts.find((status) => status.value === "pending approval")?.count || 0} pending approval</span>
               <span style={getStatusPillStyle("sent to customer")}>{statusCounts.find((status) => status.value === "sent to customer")?.count || 0} sent</span>
+              <span style={{ ...notificationBase, ...notificationStyles[syncMessageType] }}>{syncMessage}</span>
             </div>
           </div>
           {copyMessage ? (
