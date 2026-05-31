@@ -715,6 +715,7 @@ export function PumpdownSchedulePage({ isMobile, onBack, onOpenTickets, wsEnergy
   const [syncMessageType, setSyncMessageType] = useState(supabase ? "info" : "warning");
   const lastSharedUpdatedAtRef = useRef("");
   const skipNextSharedSaveRef = useRef(false);
+  const assignmentWarningTimeoutRef = useRef(null);
 
   useEffect(() => {
     let ignore = false;
@@ -968,8 +969,11 @@ export function PumpdownSchedulePage({ isMobile, onBack, onOpenTickets, wsEnergy
   };
 
   const showAssignmentWarning = (message) => {
+    if (assignmentWarningTimeoutRef.current) {
+      window.clearTimeout(assignmentWarningTimeoutRef.current);
+    }
     setAssignmentMessage(message);
-    window.setTimeout(() => setAssignmentMessage(""), 10000);
+    assignmentWarningTimeoutRef.current = window.setTimeout(() => setAssignmentMessage(""), 10000);
   };
 
   const findPersonAssignment = (person, except = {}) => {
@@ -1019,7 +1023,10 @@ export function PumpdownSchedulePage({ isMobile, onBack, onOpenTickets, wsEnergy
   const updateCrewPerson = (fleetId, shift, index, value) => {
     const existingAssignment = findPersonAssignment(value, { fleetId, shift, index });
     if (existingAssignment) {
-      showAssignmentWarning(`${value} is already assigned to ${existingAssignment.fleet} ${existingAssignment.shift} Shift.`);
+      const targetFleet = schedule.fleets.find((fleet) => fleet.id === fleetId);
+      const assignedSpot = `${existingAssignment.fleet} ${existingAssignment.shift} Shift`;
+      const requestedSpot = `${targetFleet?.label || "this fleet"} ${shift} Shift`;
+      showAssignmentWarning(`Cannot assign ${value} to ${requestedSpot}. ${value} is already assigned to ${assignedSpot}. Please remove ${value} from ${assignedSpot} to continue.`);
       return;
     }
 
@@ -1348,6 +1355,48 @@ export function PumpdownSchedulePage({ isMobile, onBack, onOpenTickets, wsEnergy
 
   return (
     <div style={{ background: "linear-gradient(180deg, #f3f7fc 0%, #f8fafc 45%, #f8fafc 100%)", minHeight: "100vh", padding: isMobile ? 12 : 18, color: "#111827", colorScheme: "light" }}>
+      {assignmentMessage ? (
+        <div
+          role="alert"
+          style={{
+            position: "fixed",
+            zIndex: 1000,
+            right: isMobile ? 12 : 24,
+            bottom: isMobile ? 12 : 24,
+            left: isMobile ? 12 : "auto",
+            maxWidth: isMobile ? "none" : 520,
+            border: "1px solid #fca5a5",
+            background: "#fff1f2",
+            color: "#991b1b",
+            borderRadius: 14,
+            boxShadow: "0 18px 42px rgba(127, 29, 29, 0.20)",
+            padding: 14,
+          }}
+        >
+          <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+            <div style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 800, lineHeight: 1.45 }}>
+              {assignmentMessage}
+            </div>
+            <button
+              type="button"
+              onClick={() => setAssignmentMessage("")}
+              style={{
+                border: "1px solid #fca5a5",
+                background: "#ffffff",
+                color: "#991b1b",
+                WebkitTextFillColor: "#991b1b",
+                borderRadius: 10,
+                padding: "5px 9px",
+                cursor: "pointer",
+                fontWeight: 900,
+              }}
+              aria-label="Close assignment warning"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      ) : null}
       <div style={{ maxWidth: 1260, margin: "0 auto", textAlign: "left" }}>
         <div style={{ ...refinedCard, marginBottom: 16, padding: isMobile ? 14 : 18 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
@@ -1383,11 +1432,6 @@ export function PumpdownSchedulePage({ isMobile, onBack, onOpenTickets, wsEnergy
           {downloadMessage ? (
             <div style={{ display: "flex", justifyContent: "center", marginTop: 12 }}>
               <div style={{ ...notificationBase, ...notificationStyles.success }}>{downloadMessage}</div>
-            </div>
-          ) : null}
-          {assignmentMessage ? (
-            <div style={{ display: "flex", justifyContent: "center", marginTop: 12 }}>
-              <div style={{ ...notificationBase, ...notificationStyles.error }}>{assignmentMessage}</div>
             </div>
           ) : null}
         </div>
