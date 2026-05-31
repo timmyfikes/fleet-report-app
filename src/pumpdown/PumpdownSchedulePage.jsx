@@ -921,6 +921,18 @@ export function PumpdownSchedulePage({ isMobile, onBack, onOpenTickets, wsEnergy
     () => [...schedule.people].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })),
     [schedule.people]
   );
+  const assignedRosterPeople = useMemo(() => {
+    const assigned = new Set();
+    schedule.fleets.forEach((fleet) => {
+      SHIFT_OPTIONS.forEach((shift) => {
+        (fleet.crews[shift] || []).forEach((person) => {
+          const cleanPerson = String(person || "").trim().toLowerCase();
+          if (cleanPerson) assigned.add(cleanPerson);
+        });
+      });
+    });
+    return assigned;
+  }, [schedule.fleets]);
   const duplicateAssignments = useMemo(() => {
     const assignments = new Map();
     schedule.fleets.forEach((fleet) => {
@@ -1516,14 +1528,33 @@ export function PumpdownSchedulePage({ isMobile, onBack, onOpenTickets, wsEnergy
                 </button>
               </div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", maxHeight: 160, overflowY: "auto", paddingRight: 2 }}>
-                {sortedRosterPeople.map((person) => (
-                  <div key={person} style={{ display: "inline-flex", alignItems: "center", gap: 8, border: "1px solid #e2e8f0", borderRadius: 999, padding: "6px 8px 6px 10px", background: "#ffffff" }}>
-                    <span style={{ color: "#111827", fontWeight: 700, fontSize: 13 }}>{person}</span>
-                    <button type="button" onClick={() => removePersonFromRoster(person)} style={{ ...rosterButton, padding: "4px 7px", borderRadius: 999 }}>
-                      Remove
-                    </button>
-                  </div>
-                ))}
+                {sortedRosterPeople.map((person) => {
+                  const isAssigned = assignedRosterPeople.has(String(person || "").trim().toLowerCase());
+                  return (
+                    <div
+                      key={person}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 8,
+                        border: isAssigned ? "1px solid #e2e8f0" : "1px solid #facc15",
+                        borderRadius: 999,
+                        padding: "6px 8px 6px 10px",
+                        background: isAssigned ? "#ffffff" : "#fef9c3",
+                      }}
+                    >
+                      <span style={{ color: "#111827", fontWeight: 700, fontSize: 13 }}>{person}</span>
+                      {!isAssigned ? (
+                        <span style={{ color: "#854d0e", fontSize: 11, fontWeight: 900, textTransform: "uppercase" }}>
+                          Unassigned
+                        </span>
+                      ) : null}
+                      <button type="button" onClick={() => removePersonFromRoster(person)} style={{ ...rosterButton, padding: "4px 7px", borderRadius: 999 }}>
+                        Remove
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
