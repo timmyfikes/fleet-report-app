@@ -44,10 +44,13 @@ import { SavedReportsPanel } from "./fleetReport/components/SavedReportsPanel";
 import { DeleteAccessModal } from "./fleetReport/components/DeleteAccessModal";
 import { HelpModal } from "./fleetReport/components/HelpModal";
 import { PumpdownTicketsPage } from "./pumpdown/PumpdownTicketsPage";
+import { PumpdownSchedulePage } from "./pumpdown/PumpdownSchedulePage";
 
 const getInitialPage = () => {
   if (typeof window === "undefined") return "fleet";
-  return window.location.hash === "#/pumpdown" ? "pumpdown" : "fleet";
+  if (window.location.hash === "#/pumpdown") return "pumpdown";
+  if (window.location.hash === "#/pumpdown-schedule") return "pumpdown-schedule";
+  return "fleet";
 };
 
 export default function FleetReportApp() {
@@ -62,7 +65,7 @@ export default function FleetReportApp() {
 
   useEffect(() => {
     const syncPageFromHash = () => {
-      setActivePage(window.location.hash === "#/pumpdown" ? "pumpdown" : "fleet");
+      setActivePage(getInitialPage());
     };
     window.addEventListener("hashchange", syncPageFromHash);
     syncPageFromHash();
@@ -70,7 +73,12 @@ export default function FleetReportApp() {
   }, []);
 
   const navigateToPage = useCallback((page) => {
-    const nextHash = page === "pumpdown" ? "#/pumpdown" : "#/";
+    const pageHashes = {
+      fleet: "#/",
+      pumpdown: "#/pumpdown",
+      "pumpdown-schedule": "#/pumpdown-schedule",
+    };
+    const nextHash = pageHashes[page] || "#/";
     if (window.location.hash !== nextHash) {
       window.location.hash = nextHash;
     }
@@ -815,6 +823,18 @@ ${issueLines}`;
       <PumpdownTicketsPage
         isMobile={isMobile}
         onBack={() => navigateToPage("fleet")}
+        onOpenSchedule={() => navigateToPage("pumpdown-schedule")}
+        wsEnergyLogo={wsEnergyLogo}
+      />
+    );
+  }
+
+  if (activePage === "pumpdown-schedule") {
+    return (
+      <PumpdownSchedulePage
+        isMobile={isMobile}
+        onBack={() => navigateToPage("fleet")}
+        onOpenTickets={() => navigateToPage("pumpdown")}
         wsEnergyLogo={wsEnergyLogo}
       />
     );
@@ -831,6 +851,7 @@ ${issueLines}`;
           setShowHelp={setShowHelp}
           wsEnergyLogo={wsEnergyLogo}
           onOpenPumpdown={() => navigateToPage("pumpdown")}
+          onOpenPumpdownSchedule={() => navigateToPage("pumpdown-schedule")}
         />
 
         <div style={{

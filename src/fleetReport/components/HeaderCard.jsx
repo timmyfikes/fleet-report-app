@@ -1,57 +1,73 @@
 import React from "react";
 import { card, input } from "../config";
 
-export function HeaderCard({ isMobile, activeFleet, fleetTabs, setActiveFleet, setShowHelp, wsEnergyLogo, onOpenPumpdown }) {
+export function HeaderCard({ isMobile, activeFleet, fleetTabs, setActiveFleet, setShowHelp, wsEnergyLogo, onOpenPumpdown, onOpenPumpdownSchedule }) {
   return (
     <div style={{ ...card, marginBottom: 16, position: "relative" }}>
-      {onOpenPumpdown ? (
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {onOpenPumpdown ? (
+            <button
+              type="button"
+              onClick={onOpenPumpdown}
+              style={{
+                ...input,
+                width: "auto",
+                padding: "8px 12px",
+                background: "#111827",
+                border: "none",
+                color: "#ffffff",
+                WebkitTextFillColor: "#ffffff",
+                fontWeight: 700,
+                fontSize: 13,
+                cursor: "pointer",
+              }}
+            >
+              Pumpdown Tickets
+            </button>
+          ) : null}
+          {onOpenPumpdownSchedule ? (
+            <button
+              type="button"
+              onClick={onOpenPumpdownSchedule}
+              style={{
+                ...input,
+                width: "auto",
+                padding: "8px 12px",
+                background: "#ecfeff",
+                border: "1px solid #67e8f9",
+                color: "#0e7490",
+                WebkitTextFillColor: "#0e7490",
+                fontWeight: 700,
+                fontSize: 13,
+                cursor: "pointer",
+              }}
+            >
+              Pumpdown Schedule
+            </button>
+          ) : null}
+        </div>
         <button
           type="button"
-          onClick={onOpenPumpdown}
+          onClick={() => setShowHelp(true)}
           style={{
-            position: isMobile ? "static" : "absolute",
-            top: isMobile ? undefined : 14,
-            left: isMobile ? undefined : 14,
             ...input,
             width: "auto",
             padding: "8px 12px",
-            background: "#111827",
-            border: "none",
-            color: "#ffffff",
-            WebkitTextFillColor: "#ffffff",
+            background: "#eff6ff",
+            border: "1px solid #93c5fd",
+            color: "#1d4ed8",
+            WebkitTextFillColor: "#1d4ed8",
             fontWeight: 700,
             fontSize: 13,
             cursor: "pointer",
-            marginBottom: isMobile ? 10 : 0,
+            marginLeft: "auto",
+            display: "block",
           }}
         >
-          Pumpdown Tickets
+          Help
         </button>
-      ) : null}
-      <button
-        type="button"
-        onClick={() => setShowHelp(true)}
-        style={{
-          position: isMobile ? "static" : "absolute",
-          top: isMobile ? undefined : 14,
-          right: isMobile ? undefined : 14,
-          ...input,
-          width: "auto",
-          padding: "8px 12px",
-          background: "#eff6ff",
-          border: "1px solid #93c5fd",
-          color: "#1d4ed8",
-          WebkitTextFillColor: "#1d4ed8",
-          fontWeight: 700,
-          fontSize: 13,
-          cursor: "pointer",
-          marginLeft: isMobile ? "auto" : 0,
-          marginBottom: isMobile ? 10 : 0,
-          display: "block",
-        }}
-      >
-        Help
-      </button>
+      </div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14, justifyContent: "center" }}>
         {fleetTabs.map((fleet) => (
           <button

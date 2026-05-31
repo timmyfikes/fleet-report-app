@@ -671,7 +671,7 @@ const formatPumpdownTickets = (tickets) => {
   return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 };
 
-export function PumpdownTicketsPage({ isMobile, onBack, wsEnergyLogo }) {
+export function PumpdownTicketsPage({ isMobile, onBack, onOpenSchedule, wsEnergyLogo }) {
   const [isUnlocked, setIsUnlocked] = useState(() => {
     if (typeof window === "undefined") return false;
     return window.sessionStorage.getItem(ACCESS_KEY) === "true";
@@ -1031,9 +1031,16 @@ export function PumpdownTicketsPage({ isMobile, onBack, wsEnergyLogo }) {
     return (
       <div style={{ background: "linear-gradient(180deg, #f3f7fc 0%, #f8fafc 100%)", minHeight: "100vh", padding: isMobile ? 12 : 18, color: "#111827", colorScheme: "light" }}>
         <div style={{ maxWidth: 620, margin: "0 auto", textAlign: "left" }}>
-          <button type="button" onClick={onBack} style={{ ...pageButton, marginBottom: 12, background: "#e2e8f0", border: "none", width: isMobile ? "100%" : "auto" }}>
-            Back to Fleet Report
-          </button>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+            <button type="button" onClick={onBack} style={{ ...pageButton, background: "#e2e8f0", border: "none", width: isMobile ? "100%" : "auto" }}>
+              Back to Fleet Report
+            </button>
+            {onOpenSchedule ? (
+              <button type="button" onClick={onOpenSchedule} style={{ ...pageButton, background: "#ecfeff", border: "1px solid #67e8f9", color: "#0e7490", WebkitTextFillColor: "#0e7490", width: isMobile ? "100%" : "auto" }}>
+                Pumpdown Schedule
+              </button>
+            ) : null}
+          </div>
           <form onSubmit={unlockPage} style={{ ...refinedCard, padding: isMobile ? 18 : 24 }}>
             <div style={{ textAlign: "center", marginBottom: 18 }}>
               <img
@@ -1076,9 +1083,16 @@ export function PumpdownTicketsPage({ isMobile, onBack, wsEnergyLogo }) {
       <div style={{ maxWidth: 1220, margin: "0 auto", textAlign: "left" }}>
         <div style={{ ...refinedCard, marginBottom: 16, padding: isMobile ? 14 : 18 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-            <button type="button" onClick={onBack} style={{ ...pageButton, background: "#e2e8f0", border: "none", width: isMobile ? "100%" : "auto" }}>
-              Back to Fleet Report
-            </button>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", width: isMobile ? "100%" : "auto" }}>
+              <button type="button" onClick={onBack} style={{ ...pageButton, background: "#e2e8f0", border: "none", flex: isMobile ? 1 : "none" }}>
+                Back to Fleet Report
+              </button>
+              {onOpenSchedule ? (
+                <button type="button" onClick={onOpenSchedule} style={{ ...pageButton, background: "#ecfeff", border: "1px solid #67e8f9", color: "#0e7490", WebkitTextFillColor: "#0e7490", flex: isMobile ? 1 : "none" }}>
+                  Pumpdown Schedule
+                </button>
+              ) : null}
+            </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", width: isMobile ? "100%" : "auto" }}>
               <button type="button" onClick={copyForTeams} style={{ ...pageButton, flex: isMobile ? 1 : "none", background: "#111827", border: "none", color: "#ffffff", WebkitTextFillColor: "#ffffff" }}>
                 Copy Teams Update
