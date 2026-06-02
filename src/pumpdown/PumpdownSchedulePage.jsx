@@ -21,6 +21,7 @@ const SHARED_SCHEDULE_ID = "current";
 const SHARED_SAVE_DELAY_MS = 700;
 const DEFAULT_ANCHOR_DATE = "2026-01-07";
 const CYCLE_DAYS = 21;
+const ROTATION_DAYS = 7;
 const DEFAULT_SELECTED_YEAR = 2026;
 const SHIFT_OPTIONS = ["A", "B", "C"];
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -146,6 +147,15 @@ const formatShortDate = (date) =>
 const formatFullDate = (date) =>
   date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
 
+const formatDateRange = (startDate, endDate) => {
+  const startMonth = startDate.toLocaleDateString(undefined, { month: "short" });
+  const endMonth = endDate.toLocaleDateString(undefined, { month: "short" });
+  const startDay = startDate.getDate();
+  const endDay = endDate.getDate();
+  if (startMonth === endMonth) return `${startMonth} ${startDay} - ${endDay}`;
+  return `${startMonth} ${startDay} - ${endMonth} ${endDay}`;
+};
+
 const formatPdfDate = (value) =>
   value ? dateFromInput(value).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "";
 
@@ -170,18 +180,24 @@ const getNextChangeDate = (shift, fromDate, anchorDate) => {
   return fromDate;
 };
 
-const getCrewNames = (crew = []) => crew.filter(Boolean).join(" / ") || "Open";
-
-const isPtoEntryActiveOnDate = (entry, date) => {
-  if (!entry?.person || !entry.startDate) return false;
-  const dateTime = dateFromInput(dateToInput(date)).getTime();
-  const startTime = dateFromInput(entry.startDate).getTime();
-  const endTime = dateFromInput(entry.endDate || entry.startDate).getTime();
-  return dateTime >= Math.min(startTime, endTime) && dateTime <= Math.max(startTime, endTime);
+const getRotationWeekStart = (date, anchorDate) => {
+  const normalizedDate = dateFromInput(dateToInput(date));
+  return addDays(normalizedDate, -positiveMod(getDayOffset(normalizedDate, anchorDate), ROTATION_DAYS));
 };
 
-const getPtoEntriesForDate = (ptoEntries, date) =>
-  ptoEntries.filter((entry) => isPtoEntryActiveOnDate(entry, date));
+const getCrewNames = (crew = []) => crew.filter(Boolean).join(" / ") || "Open";
+
+const isPtoEntryActiveInDateRange = (entry, startDate, endDate) => {
+  if (!entry?.person || !entry.startDate) return false;
+  const rangeStart = dateFromInput(dateToInput(startDate)).getTime();
+  const rangeEnd = dateFromInput(dateToInput(endDate)).getTime();
+  const entryStart = dateFromInput(entry.startDate).getTime();
+  const entryEnd = dateFromInput(entry.endDate || entry.startDate).getTime();
+  return Math.max(entryStart, entryEnd) >= Math.min(rangeStart, rangeEnd) && Math.min(entryStart, entryEnd) <= Math.max(rangeStart, rangeEnd);
+};
+
+const getPtoEntriesForDateRange = (ptoEntries, startDate, endDate) =>
+  ptoEntries.filter((entry) => isPtoEntryActiveInDateRange(entry, startDate, endDate));
 
 const formatPtoDateRange = (entry) => {
   const start = formatShortDate(dateFromInput(entry.startDate));
@@ -508,7 +524,7 @@ const buildPdfDocument = (pages) => {
   return parts.join("");
 };
 
-const buildTodayPdf = (todayDate, onTodayRows, offTodayRows) => {
+const buildTodayPdf = (periodStart, periodEnd, onTodayRows, offTodayRows) => {
   const page = createPdfPage();
   const margin = 28;
   const gap = 16;
@@ -543,16 +559,16 @@ const buildTodayPdf = (todayDate, onTodayRows, offTodayRows) => {
     ],
   });
 
-  drawText(page, "Pumpdown On Today", margin, 28, { size: 18, bold: true });
-  drawText(page, `Date: ${formatFullDate(todayDate)}`, margin, 52, { size: 10, color: "#475569" });
+  drawText(page, "Pumpdown Quick Reference", margin, 28, { size: 18, bold: true });
+  drawText(page, `Rotation Week: ${formatDateRange(periodStart, periodEnd)}`, margin, 52, { size: 10, color: "#475569" });
   drawTodayTable(
-    "On Today",
+    "On This Week",
     onTodayRows.map((row) => makeTodayRow(row, formatShortDate(row.changeDate))),
     margin,
     82
   );
   drawTodayTable(
-    "Off Today",
+    "Off This Week",
     offTodayRows.map((row) => makeTodayRow(row, `Returns ${formatShortDate(row.changeDate)}`)),
     margin + tableWidth + gap,
     82
@@ -867,18 +883,34 @@ export function PumpdownSchedulePage({ isMobile, onBack, onOpenTickets, wsEnergy
   );
   const yearMonths = useMemo(() => getYearDates(selectedYear), [selectedYear]);
   const todayDate = useMemo(() => dateFromInput(getTodayDateValue()), []);
-  const selectedReferenceDate = useMemo(
-    () => addDays(todayDate, selectedWeekOffset * 7),
-    [selectedWeekOffset, todayDate]
+  const currentRotationStart = useMemo(
+    () => getRotationWeekStart(todayDate, schedule.anchorDate),
+    [schedule.anchorDate, todayDate]
+  );
+  const selectedRotationStart = useMemo(
+    () => addDays(currentRotationStart, selectedWeekOffset * ROTATION_DAYS),
+    [currentRotationStart, selectedWeekOffset]
+  );
+  const selectedRotationEnd = useMemo(
+    () => addDays(selectedRotationStart, ROTATION_DAYS - 1),
+    [selectedRotationStart]
+  );
+  const quickReferenceTabs = useMemo(
+    () => Array.from({ length: 6 }, (_, index) => {
+      const start = addDays(currentRotationStart, index * ROTATION_DAYS);
+      const end = addDays(start, ROTATION_DAYS - 1);
+      return { index, start, end, label: formatDateRange(start, end) };
+    }),
+    [currentRotationStart]
   );
 
-  const getRowsForDate = useMemo(() => (date) => {
+  const getRowsForDate = useMemo(() => (date, ptoStartDate = date, ptoEndDate = date) => {
     const rows = [];
     schedule.fleets.forEach((fleet) => {
       SHIFT_OPTIONS.forEach((shift) => {
         const status = getShiftStatusForDate(date, shift, schedule.anchorDate);
         const crewList = fleet.crews[shift] || [];
-        const ptoEntries = getPtoEntriesForDate(schedule.ptoEntries || [], date);
+        const ptoEntries = getPtoEntriesForDateRange(schedule.ptoEntries || [], ptoStartDate, ptoEndDate);
         const vacationPeople = crewList.filter((person) =>
           ptoEntries.some((entry) => entry.person.toLowerCase() === person.toLowerCase())
         );
@@ -907,14 +939,11 @@ export function PumpdownSchedulePage({ isMobile, onBack, onOpenTickets, wsEnergy
     return rows;
   }, [schedule.anchorDate, schedule.fleets, schedule.ptoEntries]);
 
-  const todayRows = useMemo(() => getRowsForDate(todayDate), [getRowsForDate, todayDate]);
   const selectedReferenceRows = useMemo(
-    () => getRowsForDate(selectedReferenceDate),
-    [getRowsForDate, selectedReferenceDate]
+    () => getRowsForDate(selectedRotationStart, selectedRotationStart, selectedRotationEnd),
+    [getRowsForDate, selectedRotationEnd, selectedRotationStart]
   );
 
-  const onTodayRows = useMemo(() => todayRows.filter((item) => item.status === "ON"), [todayRows]);
-  const offTodayRows = useMemo(() => todayRows.filter((item) => item.status === "OFF"), [todayRows]);
   const selectedOnRows = useMemo(() => selectedReferenceRows.filter((item) => item.status === "ON"), [selectedReferenceRows]);
   const selectedOffRows = useMemo(() => selectedReferenceRows.filter((item) => item.status === "OFF"), [selectedReferenceRows]);
   const sortedRosterPeople = useMemo(
@@ -1138,8 +1167,10 @@ export function PumpdownSchedulePage({ isMobile, onBack, onOpenTickets, wsEnergy
   const downloadSchedulePdf = (view) => {
     const safeDate = getTodayDateValue();
     if (view === "today") {
-      downloadPdf(`pumpdown-on-today-${safeDate}.pdf`, buildTodayPdf(todayDate, onTodayRows, offTodayRows));
-      setDownloadMessage("On Today PDF downloaded");
+      const startDate = dateToInput(selectedRotationStart);
+      const endDate = dateToInput(selectedRotationEnd);
+      downloadPdf(`pumpdown-quick-reference-${startDate}-to-${endDate}.pdf`, buildTodayPdf(selectedRotationStart, selectedRotationEnd, selectedOnRows, selectedOffRows));
+      setDownloadMessage("Quick Reference PDF downloaded");
     }
     if (view === "personnel") {
       downloadPdf(`pumpdown-personnel-line-up-${safeDate}.pdf`, buildPersonnelPdf(schedule.fleets));
@@ -1454,33 +1485,33 @@ export function PumpdownSchedulePage({ isMobile, onBack, onOpenTickets, wsEnergy
               <div>
                 <h2 style={{ margin: 0, fontSize: 22, color: "#111827" }}>On Today / Upcoming Weeks</h2>
                 <div style={{ marginTop: 4, color: "#64748b", fontSize: 13, fontWeight: 700 }}>
-                  Quick reference for {formatFullDate(selectedReferenceDate)}
+                  Rotation week {formatDateRange(selectedRotationStart, selectedRotationEnd)}
                 </div>
               </div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <button type="button" onClick={() => downloadSchedulePdf("today")} style={pdfButton}>
-                  Download Today PDF
+                  Download Quick Reference PDF
                 </button>
               </div>
             </div>
 
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
-              {Array.from({ length: 6 }, (_, index) => (
+              {quickReferenceTabs.map((tab) => (
                 <button
-                  key={index}
+                  key={tab.index}
                   type="button"
-                  onClick={() => setSelectedWeekOffset(index)}
+                  onClick={() => setSelectedWeekOffset(tab.index)}
                   style={{
                     ...pageButton,
                     padding: "8px 10px",
                     borderRadius: 10,
-                    background: selectedWeekOffset === index ? "#dbeafe" : "#ffffff",
-                    border: selectedWeekOffset === index ? "2px solid #2563eb" : "1px solid #cbd5e1",
+                    background: selectedWeekOffset === tab.index ? "#dbeafe" : "#ffffff",
+                    border: selectedWeekOffset === tab.index ? "2px solid #2563eb" : "1px solid #cbd5e1",
                     color: "#111827",
                     WebkitTextFillColor: "#111827",
                   }}
                 >
-                  {index === 0 ? "Today" : `+${index} Week${index > 1 ? "s" : ""}`}
+                  {tab.label}
                 </button>
               ))}
             </div>
