@@ -187,6 +187,15 @@ const getRotationWeekStart = (date, anchorDate) => {
 
 const getCrewNames = (crew = []) => crew.filter(Boolean).join(" / ") || "Open";
 
+const getShiftChangeSummaries = (rows, getText) => {
+  const seen = new Set();
+  return rows.reduce((summaries, row) => {
+    if (seen.has(row.shift)) return summaries;
+    seen.add(row.shift);
+    return [...summaries, getText(row)];
+  }, []);
+};
+
 const isPtoEntryActiveInDateRange = (entry, startDate, endDate) => {
   if (!entry?.person || !entry.startDate) return false;
   const rangeStart = dateFromInput(dateToInput(startDate)).getTime();
@@ -536,40 +545,46 @@ const buildTodayPdf = (periodStart, periodEnd, onTodayRows, offTodayRows) => {
   const columns = [
     { label: "Fleet", width: 50 },
     { label: "Shift", width: 45 },
-    { label: "Personnel / PTO", width: tableWidth - 180, maxLines: 3, size: 7.4 },
-    { label: "Next Change", width: 85 },
+    { label: "Personnel / PTO", width: tableWidth - 95, maxLines: 3, size: 7.4 },
   ];
 
-  const drawTodayTable = (title, rows, x, y) => {
+  const drawTodayTable = (title, summaryLines, rows, x, y) => {
     drawText(page, title, x, y, { size: 13, bold: true });
-    const tableY = y + 20;
+    const summaryText = summaryLines.join("   |   ");
+    if (summaryText) {
+      drawText(page, summaryText, x, y + 18, { size: 8.5, bold: true, color: "#475569", maxWidth: tableWidth });
+    }
+    const tableY = y + 34;
     drawTableHeader(page, columns, x, tableY, headerHeight);
     rows.forEach((row, index) => {
       drawTableRow(page, columns, row.values, x, tableY + headerHeight + index * rowHeight, rowHeight, row.hasPto ? "#fff1f2" : index % 2 === 0 ? "#ffffff" : "#f8fafc");
     });
   };
 
-  const makeTodayRow = (row, changeText) => ({
+  const makeTodayRow = (row) => ({
     hasPto: row.vacationDetails.length > 0,
     values: [
       row.fleet,
       `${row.shift} Shift`,
       [row.crew, row.vacationDetails.length ? `PTO: ${row.vacationDetails.join("; ")}` : ""].filter(Boolean).join(" | "),
-      changeText,
     ],
   });
+  const onSummaries = getShiftChangeSummaries(onTodayRows, (row) => `${row.shift} Shift going off ${formatShortDate(row.changeDate)}`);
+  const offSummaries = getShiftChangeSummaries(offTodayRows, (row) => `${row.shift} Shift returns ${formatShortDate(row.changeDate)}`);
 
   drawText(page, "Pumpdown Quick Reference", margin, 28, { size: 18, bold: true });
   drawText(page, `Rotation Week: ${formatDateRange(periodStart, periodEnd)}`, margin, 52, { size: 10, color: "#475569" });
   drawTodayTable(
     "On This Week",
-    onTodayRows.map((row) => makeTodayRow(row, formatShortDate(row.changeDate))),
+    onSummaries,
+    onTodayRows.map((row) => makeTodayRow(row)),
     margin,
     82
   );
   drawTodayTable(
     "Off This Week",
-    offTodayRows.map((row) => makeTodayRow(row, `Returns ${formatShortDate(row.changeDate)}`)),
+    offSummaries,
+    offTodayRows.map((row) => makeTodayRow(row)),
     margin + tableWidth + gap,
     82
   );
@@ -882,7 +897,8 @@ export function PumpdownSchedulePage({ isMobile, onBack, onOpenTickets, wsEnergy
     [selectedYear]
   );
   const yearMonths = useMemo(() => getYearDates(selectedYear), [selectedYear]);
-  const todayDate = useMemo(() => dateFromInput(getTodayDateValue()), []);
+  const todayInputValue = useMemo(() => getTodayDateValue(), []);
+  const todayDate = useMemo(() => dateFromInput(todayInputValue), [todayInputValue]);
   const currentRotationStart = useMemo(
     () => getRotationWeekStart(todayDate, schedule.anchorDate),
     [schedule.anchorDate, todayDate]
@@ -946,6 +962,22 @@ export function PumpdownSchedulePage({ isMobile, onBack, onOpenTickets, wsEnergy
 
   const selectedOnRows = useMemo(() => selectedReferenceRows.filter((item) => item.status === "ON"), [selectedReferenceRows]);
   const selectedOffRows = useMemo(() => selectedReferenceRows.filter((item) => item.status === "OFF"), [selectedReferenceRows]);
+  const selectedOnChangeSummaries = useMemo(
+    () => getShiftChangeSummaries(selectedOnRows, (row) => `${row.shift} Shift going off ${formatShortDate(row.changeDate)}`),
+    [selectedOnRows]
+  );
+  const selectedOffChangeSummaries = useMemo(
+    () => getShiftChangeSummaries(selectedOffRows, (row) => `${row.shift} Shift returns ${formatShortDate(row.changeDate)}`),
+    [selectedOffRows]
+  );
+  const sortedPtoEntries = useMemo(
+    () => [...(schedule.ptoEntries || [])].sort((a, b) => {
+      const startSort = String(a.startDate || "").localeCompare(String(b.startDate || ""));
+      if (startSort !== 0) return startSort;
+      return String(a.person || "").localeCompare(String(b.person || ""), undefined, { sensitivity: "base" });
+    }),
+    [schedule.ptoEntries]
+  );
   const sortedRosterPeople = useMemo(
     () => [...schedule.people].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })),
     [schedule.people]
@@ -1145,6 +1177,33 @@ export function PumpdownSchedulePage({ isMobile, onBack, onOpenTickets, wsEnergy
   };
 
   const updatePtoEntry = (id, key, value) => {
+    const currentEntry = schedule.ptoEntries?.find((entry) => entry.id === id);
+
+    if (key === "startDate") {
+      if (value && value < todayInputValue) {
+        showAssignmentWarning("PTO / Vacation start date cannot be in the past.");
+        return;
+      }
+
+      updateSchedule((prev) => ({
+        ...prev,
+        ptoEntries: (prev.ptoEntries || []).map((entry) => {
+          if (entry.id !== id) return entry;
+          const nextEndDate = !entry.endDate || entry.endDate < value ? value : entry.endDate;
+          return { ...entry, startDate: value, endDate: nextEndDate };
+        }),
+      }));
+      return;
+    }
+
+    if (key === "endDate") {
+      const startDate = currentEntry?.startDate || todayInputValue;
+      if (value && value < startDate) {
+        showAssignmentWarning("PTO / Vacation end date cannot be before the start date.");
+        return;
+      }
+    }
+
     updateSchedule((prev) => ({
       ...prev,
       ptoEntries: (prev.ptoEntries || []).map((entry) => (
@@ -1238,11 +1297,22 @@ export function PumpdownSchedulePage({ isMobile, onBack, onOpenTickets, wsEnergy
     </div>
   );
 
-  const renderTodayList = (title, rowsToRender, emptyText) => (
+  const renderTodayList = (title, rowsToRender, emptyText, summaryLines = []) => (
     <div style={{ border: "1px solid #e2e8f0", borderRadius: 14, background: "#ffffff", overflow: "hidden" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "12px 14px", background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
-        <h3 style={{ margin: 0, color: "#111827", fontSize: 17 }}>{title}</h3>
-        <span style={{ color: "#64748b", fontSize: 12, fontWeight: 900 }}>{rowsToRender.length} crews</span>
+      <div style={{ padding: "12px 14px", background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+          <h3 style={{ margin: 0, color: "#111827", fontSize: 17 }}>{title}</h3>
+          <span style={{ color: "#64748b", fontSize: 12, fontWeight: 900 }}>{rowsToRender.length} crews</span>
+        </div>
+        {summaryLines.length ? (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 9 }}>
+            {summaryLines.map((line) => (
+              <span key={line} style={{ border: "1px solid #cbd5e1", background: "#ffffff", color: "#334155", borderRadius: 999, padding: "4px 8px", fontSize: 12, fontWeight: 900 }}>
+                {line}
+              </span>
+            ))}
+          </div>
+        ) : null}
       </div>
       <div style={{ display: "grid", gap: 10, padding: 12 }}>
         {rowsToRender.length ? rowsToRender.map((rowItem) => {
@@ -1256,11 +1326,6 @@ export function PumpdownSchedulePage({ isMobile, onBack, onOpenTickets, wsEnergy
                 </span>
                 <span style={{ color: "#475569", fontSize: 14, fontWeight: 700, overflowWrap: "anywhere" }}>{rowItem.crew}</span>
               </div>
-              {rowItem.status === "OFF" ? (
-                <div style={{ marginTop: 8, color: "#64748b", fontSize: 12, fontWeight: 800 }}>
-                  Returns {formatShortDate(rowItem.changeDate)}
-                </div>
-              ) : null}
               {rowItem.vacationDetails.length ? (
                 <div style={{ marginTop: 8, color: "#b91c1c", fontSize: 12, fontWeight: 900 }}>
                   PTO / Vacation: {rowItem.vacationDetails.join(", ")}
@@ -1517,8 +1582,8 @@ export function PumpdownSchedulePage({ isMobile, onBack, onOpenTickets, wsEnergy
             </div>
 
             <div style={{ display: "grid", gap: 12, gridTemplateColumns: isMobile ? "1fr" : "repeat(2, minmax(0, 1fr))", alignItems: "start" }}>
-              {renderTodayList("On", selectedOnRows, "No crews are marked on.")}
-              {renderTodayList("Off", selectedOffRows, "No crews are marked off.")}
+              {renderTodayList("On", selectedOnRows, "No crews are marked on.", selectedOnChangeSummaries)}
+              {renderTodayList("Off", selectedOffRows, "No crews are marked off.", selectedOffChangeSummaries)}
             </div>
           </div>
 
@@ -1612,7 +1677,7 @@ export function PumpdownSchedulePage({ isMobile, onBack, onOpenTickets, wsEnergy
             </div>
 
               <div style={{ display: "grid", gap: 10 }}>
-                {(schedule.ptoEntries || []).length ? (schedule.ptoEntries || []).map((entry) => (
+                {sortedPtoEntries.length ? sortedPtoEntries.map((entry) => (
                   <div key={entry.id} style={{ display: "grid", gap: 10, gridTemplateColumns: isMobile ? "1fr" : "minmax(180px, 1.2fr) minmax(140px, 0.8fr) minmax(140px, 0.8fr) minmax(180px, 1fr) auto", alignItems: "end", border: "1px solid #fecaca", background: "#fff7f7", borderRadius: 12, padding: 12 }}>
                     <div>
                       <label style={label}>Person</label>
@@ -1625,11 +1690,11 @@ export function PumpdownSchedulePage({ isMobile, onBack, onOpenTickets, wsEnergy
                     </div>
                     <div>
                       <label style={label}>Start</label>
-                      <input style={compactInput} type="date" value={entry.startDate} onChange={(event) => updatePtoEntry(entry.id, "startDate", event.target.value)} />
+                      <input style={compactInput} type="date" min={todayInputValue} value={entry.startDate} onChange={(event) => updatePtoEntry(entry.id, "startDate", event.target.value)} />
                     </div>
                     <div>
                       <label style={label}>End</label>
-                      <input style={compactInput} type="date" value={entry.endDate} onChange={(event) => updatePtoEntry(entry.id, "endDate", event.target.value)} />
+                      <input style={compactInput} type="date" min={entry.startDate || todayInputValue} value={entry.endDate} onChange={(event) => updatePtoEntry(entry.id, "endDate", event.target.value)} />
                     </div>
                     <div>
                       <label style={label}>Note</label>
