@@ -45,11 +45,13 @@ import { DeleteAccessModal } from "./fleetReport/components/DeleteAccessModal";
 import { HelpModal } from "./fleetReport/components/HelpModal";
 import { PumpdownTicketsPage } from "./pumpdown/PumpdownTicketsPage";
 import { PumpdownSchedulePage } from "./pumpdown/PumpdownSchedulePage";
+import { FleetAuditPage } from "./fleetAudit/FleetAuditPage";
 
 const getInitialPage = () => {
   if (typeof window === "undefined") return "fleet";
   if (window.location.hash === "#/pumpdown") return "pumpdown";
   if (window.location.hash === "#/pumpdown-schedule") return "pumpdown-schedule";
+  if (window.location.hash === "#/fleet-audit") return "fleet-audit";
   return "fleet";
 };
 
@@ -77,6 +79,7 @@ export default function FleetReportApp() {
       fleet: "#/",
       pumpdown: "#/pumpdown",
       "pumpdown-schedule": "#/pumpdown-schedule",
+      "fleet-audit": "#/fleet-audit",
     };
     const nextHash = pageHashes[page] || "#/";
     if (window.location.hash !== nextHash) {
@@ -840,6 +843,16 @@ ${issueLines}`;
     );
   }
 
+  if (activePage === "fleet-audit") {
+    return (
+      <FleetAuditPage
+        isMobile={isMobile}
+        onBack={() => navigateToPage("fleet")}
+        wsEnergyLogo={wsEnergyLogo}
+      />
+    );
+  }
+
   return (
     <div style={{ background: "linear-gradient(180deg, #f3f7fc 0%, #f8fafc 45%, #f8fafc 100%)", minHeight: "100vh", padding: isMobile ? 12 : 18, colorScheme: "light", color: "#111827" }}>
       <div style={{ maxWidth: 1140, margin: "0 auto" }}>
@@ -852,6 +865,7 @@ ${issueLines}`;
           wsEnergyLogo={wsEnergyLogo}
           onOpenPumpdown={() => navigateToPage("pumpdown")}
           onOpenPumpdownSchedule={() => navigateToPage("pumpdown-schedule")}
+          onOpenFleetAudit={() => navigateToPage("fleet-audit")}
         />
 
         <div style={{
