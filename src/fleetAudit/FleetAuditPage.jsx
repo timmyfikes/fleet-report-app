@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   addActionButton,
   card,
@@ -8,11 +8,13 @@ import {
   notificationStyles,
   removeActionButton,
   selectInput,
+  supabase,
 } from "../fleetReport/config";
 
 const AUDIT_PASSWORD = "1775";
 const ACCESS_KEY = "fleetAuditUnlocked";
 const STORAGE_KEY = "fleetAuditDraft";
+const AUDITS_TABLE = "fleet_audits";
 const PHOTO_MAX_SIZE = 1280;
 const PHOTO_QUALITY = 0.78;
 
@@ -23,6 +25,7 @@ const truckAndTractorItems = sectionItems(
   ["Equipment", [
     "PMs up to date in T3",
     "PM intervals correct in T3",
+    "PM Window sticker present and accurate",
     "Equipment clean and organized",
     "Toolbox clean and organized",
     "Toolbox free of unnecessary items",
@@ -30,7 +33,6 @@ const truckAndTractorItems = sectionItems(
     "Sticker kit consistent",
   ]],
   ["Compliance", [
-    "DOT compliance current",
     "Fire extinguisher inspected",
     "QR codes/documentation correct",
   ]],
@@ -39,7 +41,6 @@ const truckAndTractorItems = sectionItems(
     "Spare critical components available",
   ]],
   ["Customer Readiness", [
-    "Equipment clean and professional",
     "No leaks/damage",
   ]]
 );
@@ -48,7 +49,6 @@ const pumpItems = sectionItems(
   ["Equipment", [
     "PMs up to date in T3",
     "PM intervals correct in T3",
-    "Pump parameters set",
     "Equipment clean and organized",
     "Hose fittings standardized",
     "Sticker kit consistent",
@@ -78,7 +78,7 @@ const baseAuditSections = [
     title: "Safety",
     accent: "#dc2626",
     items: [
-      "HSI Pump Down classes completed",
+      "Assigned and dedicated crew coverage",
       "Proficiency tests created and implemented",
       "All personnel have proper PPE",
       "DISA / ISN fit-for-duty current",
@@ -91,10 +91,8 @@ const baseAuditSections = [
     title: "Personnel",
     accent: "#2563eb",
     items: [
-      "Full crew coverage",
-      "Operational training current",
-      "Right personnel assigned to correct fleet",
-      "Supervisors assigned",
+      "Assigned and dedicated crew coverage",
+      "All personnel proficient on current job task",
       "New hires onboarded properly",
       "Lead operator assigned",
       "Crew understands customer expectations",
@@ -156,7 +154,6 @@ const fixedEquipmentSections = [
       ["Data Integrity", [
         "T3 data accurate",
         "Job data captured correctly",
-        "Daily reports submitted and information correctly input",
         "Data syncing properly",
       ]],
       ["Standardization", [
@@ -173,7 +170,7 @@ const fixedEquipmentSections = [
     items: sectionItems(
       ["Equipment", [
         "Iron organized and secured",
-        "Iron standardized",
+        "Iron loadout adequate for job task",
         "Equipment clean and organized",
       ]],
       ["Compliance", [
@@ -185,8 +182,7 @@ const fixedEquipmentSections = [
         "Bad iron exchange process followed",
       ]],
       ["Customer Readiness", [
-        "Equipment clean and professional",
-        "No leaks/damage",
+        "No damage",
       ]]
     ),
   },
@@ -199,17 +195,15 @@ const trailingAuditSections = [
     accent: "#0d9488",
     items: [
       "Load-out prep process followed",
-      "Turnaround/redress process followed",
-      "On-the-job reporting accurate",
+      "Turnaround processes followed",
       "Test pit process followed",
       "Inventory (filters/parts) stocked",
-      "Morning briefings conducted",
       "Timesheets accurate",
-      "Ticketing accurate",
       "Tickets match job execution",
       "Teams chat properly named",
       "Proper personnel in Teams chat",
       "JSA filled out and sent in Teams chat daily",
+      "Daily reports submitted and information correctly input",
     ],
   },
   {
@@ -417,6 +411,30 @@ const loadStoredAudit = () => {
   }
 };
 
+const persistAuditDraft = (draft) => {
+  if (typeof window === "undefined") return false;
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(draft));
+    return true;
+  } catch (error) {
+    console.error("Unable to save fleet audit draft", error);
+    return false;
+  }
+};
+
+const normalizeSavedAuditRow = (row) => {
+  const audit = normalizeAudit(row?.audit_data);
+  return {
+    id: row.id,
+    audit,
+    date: row.audit_date || audit.date || "",
+    fleet: String(row.fleet ?? audit.fleet ?? ""),
+    customer: row.customer ?? audit.customer ?? "",
+    auditor: row.auditor ?? audit.auditor ?? "",
+    createdAt: row.created_at || "",
+  };
+};
+
 const makePhotoId = () => `photo-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
 const resizeImage = (file) =>
@@ -506,8 +524,9 @@ const getStatusTone = (status) =>
 
 const buildPrintableHtml = (audit) => {
   const auditSections = getAuditSections(audit);
+  const auditDateLabel = formatDate(audit.date) || "No date";
   const metaRows = [
-    ["Audit Date", formatDate(audit.date)],
+    ["Audit Date", auditDateLabel],
     ["Fleet", audit.fleet === "yard" ? "Yard / Shop" : `Fleet ${audit.fleet}`],
     ["Customer", audit.customer],
     ["Auditor", audit.auditor],
@@ -621,10 +640,11 @@ const buildPrintableHtml = (audit) => {
     <html>
       <head>
         <meta charset="utf-8">
-        <title>Fleet ${escapeHtml(audit.fleet)} Pumpdown Fleet Readiness Audit</title>
+        <title>${escapeHtml(`Pumpdown Fleet Readiness Audit - ${auditDateLabel}`)}</title>
         <style>
           @page { size: letter; margin: 0.45in; }
           * { box-sizing: border-box; }
+          html { background: #ffffff; }
           body {
             margin: 0;
             color: #111827;
@@ -681,12 +701,28 @@ const buildPrintableHtml = (audit) => {
           }
           .audit-section {
             break-inside: avoid;
+            page-break-inside: avoid;
             margin: 14px 0 0;
+          }
+          .audit-section.force-page-break {
+            break-before: page;
+            page-break-before: always;
+          }
+          h2, .unit-line, thead {
+            break-after: avoid;
+            page-break-after: avoid;
           }
           table {
             width: 100%;
             border-collapse: collapse;
             table-layout: fixed;
+            break-inside: avoid;
+            page-break-inside: avoid;
+          }
+          thead { display: table-header-group; }
+          tr {
+            break-inside: avoid;
+            page-break-inside: avoid;
           }
           th, td {
             border: 1px solid #cbd5e1;
@@ -735,10 +771,13 @@ const buildPrintableHtml = (audit) => {
             grid-template-columns: repeat(2, minmax(0, 1fr));
             gap: 8px;
             margin-top: 8px;
+            break-inside: avoid;
+            page-break-inside: avoid;
           }
           figure {
             margin: 0;
             break-inside: avoid;
+            page-break-inside: avoid;
           }
           img {
             display: block;
@@ -767,7 +806,7 @@ const buildPrintableHtml = (audit) => {
         <header class="header">
           <div>
             <h1>PUMPDOWN FLEET READINESS AUDIT</h1>
-            <div>Generated ${escapeHtml(formatDate(getTodayDateValue()))}</div>
+            <div>Audit Date ${escapeHtml(auditDateLabel)}</div>
           </div>
           <div style="text-align: right; font-weight: 700;">Fleet ${escapeHtml(audit.fleet)}</div>
         </header>
@@ -780,7 +819,29 @@ const buildPrintableHtml = (audit) => {
         ${sectionHtml}
 
         <script>
-          const printReport = () => window.setTimeout(() => window.print(), 300);
+          const preparePrintLayout = () => {
+            const pageHeight = 10.1 * 96;
+            const bodyTop = document.body.getBoundingClientRect().top;
+            const sections = Array.from(document.querySelectorAll(".audit-section"));
+
+            sections.forEach((section) => section.classList.remove("force-page-break"));
+            sections.forEach((section) => {
+              const rect = section.getBoundingClientRect();
+              if (rect.height >= pageHeight) return;
+
+              const sectionTop = rect.top - bodyTop;
+              const usedOnPage = sectionTop % pageHeight;
+              const remainingOnPage = pageHeight - usedOnPage;
+
+              if (usedOnPage > 0 && remainingOnPage < rect.height) {
+                section.classList.add("force-page-break");
+              }
+            });
+          };
+          const printReport = () => window.setTimeout(() => {
+            preparePrintLayout();
+            window.print();
+          }, 300);
           const images = Array.from(document.images);
           if (!images.length) {
             printReport();
@@ -808,11 +869,39 @@ export function FleetAuditPage({ isMobile, onBack, wsEnergyLogo }) {
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState("success");
   const [isProcessingPhotos, setIsProcessingPhotos] = useState(false);
+  const [savedAudits, setSavedAudits] = useState([]);
+  const [auditsLoading, setAuditsLoading] = useState(true);
+  const [isSavingAudit, setIsSavingAudit] = useState(false);
+  const [deletingAuditId, setDeletingAuditId] = useState(null);
   const auditSections = useMemo(() => getAuditSections(audit), [audit]);
   const auditEquipment = useMemo(
     () => normalizeEquipment(audit.equipment, audit.sections),
     [audit.equipment, audit.sections]
   );
+
+  const fetchSavedAudits = useCallback(async () => {
+    if (!supabase) {
+      setSavedAudits([]);
+      setAuditsLoading(false);
+      return;
+    }
+
+    setAuditsLoading(true);
+    const { data, error } = await supabase
+      .from(AUDITS_TABLE)
+      .select("id, audit_date, fleet, customer, auditor, audit_data, created_at")
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error(error);
+      setSavedAudits([]);
+      setAuditsLoading(false);
+      return;
+    }
+
+    setSavedAudits((data || []).map(normalizeSavedAuditRow));
+    setAuditsLoading(false);
+  }, []);
 
   useEffect(() => {
     if (auditSections.some((section) => section.id === activeSectionId)) return;
@@ -820,16 +909,28 @@ export function FleetAuditPage({ isMobile, onBack, wsEnergyLogo }) {
   }, [activeSectionId, auditSections]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return undefined;
-    const timeoutId = window.setTimeout(() => {
-      try {
-        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(audit));
-      } catch (error) {
-        console.error("Unable to save fleet audit draft", error);
-      }
-    }, 350);
+    fetchSavedAudits();
+  }, [fetchSavedAudits]);
 
-    return () => window.clearTimeout(timeoutId);
+  useEffect(() => {
+    persistAuditDraft(audit);
+  }, [audit]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof document === "undefined") return undefined;
+
+    const saveCurrentDraft = () => persistAuditDraft(audit);
+    const saveOnVisibilityChange = () => {
+      if (document.visibilityState === "hidden") saveCurrentDraft();
+    };
+
+    window.addEventListener("pagehide", saveCurrentDraft);
+    document.addEventListener("visibilitychange", saveOnVisibilityChange);
+
+    return () => {
+      window.removeEventListener("pagehide", saveCurrentDraft);
+      document.removeEventListener("visibilitychange", saveOnVisibilityChange);
+    };
   }, [audit]);
 
   const sectionStats = useMemo(
@@ -1056,22 +1157,101 @@ export function FleetAuditPage({ isMobile, onBack, wsEnergyLogo }) {
     const nextAudit = makeInitialAudit();
     setAudit(nextAudit);
     setActiveSectionId("safety");
-    window.localStorage.removeItem(STORAGE_KEY);
+    persistAuditDraft(nextAudit);
     showMessage("Audit form cleared");
   };
 
-  const generatePdf = () => {
+  const openAuditPdf = (auditToOpen = audit) => {
     const reportWindow = window.open("", "_blank");
     if (!reportWindow) {
       showMessage("Allow pop-ups to generate the PDF", "error");
       return;
     }
 
+    try {
+      const reportUrl = new URL(window.location.href);
+      reportUrl.hash = "/fleet-audit-print";
+      reportWindow.history.replaceState(null, "", reportUrl.toString());
+    } catch (error) {
+      console.error("Unable to update report URL", error);
+    }
+
     reportWindow.document.open();
-    reportWindow.document.write(buildPrintableHtml(audit));
+    reportWindow.document.write(buildPrintableHtml(auditToOpen));
     reportWindow.document.close();
     reportWindow.focus();
     showMessage("PDF report opened");
+  };
+
+  const saveCompletedAudit = async () => {
+    if (isSavingAudit) return;
+
+    if (!supabase) {
+      showMessage("Supabase is not connected", "error");
+      return;
+    }
+
+    setIsSavingAudit(true);
+    const normalizedAudit = normalizeAudit(audit);
+    const payload = {
+      audit_date: normalizedAudit.date || null,
+      fleet: normalizedAudit.fleet,
+      customer: normalizedAudit.customer,
+      auditor: normalizedAudit.auditor,
+      day_shift_operator: normalizedAudit.dayShiftOperator,
+      night_shift_operator: normalizedAudit.nightShiftOperator,
+      audit_data: normalizedAudit,
+    };
+
+    const { error } = await supabase.from(AUDITS_TABLE).insert(payload);
+
+    if (error) {
+      console.error(error);
+      setIsSavingAudit(false);
+      showMessage("Audit save failed", "error");
+      return;
+    }
+
+    await fetchSavedAudits();
+    setIsSavingAudit(false);
+    showMessage("Completed audit saved");
+  };
+
+  const loadSavedAudit = (savedAudit) => {
+    const nextAudit = normalizeAudit(savedAudit.audit);
+    setAudit(nextAudit);
+    setActiveSectionId("safety");
+    persistAuditDraft(nextAudit);
+    showMessage("Saved audit loaded");
+  };
+
+  const removeSavedAudit = async (savedAudit) => {
+    if (!supabase || !savedAudit?.id || deletingAuditId) return;
+
+    const auditName = [
+      savedAudit.fleet ? `Fleet ${savedAudit.fleet}` : "saved audit",
+      savedAudit.customer,
+      formatDate(savedAudit.date),
+    ].filter(Boolean).join(" - ");
+
+    if (typeof window !== "undefined" && !window.confirm(`Remove ${auditName}?`)) return;
+
+    setDeletingAuditId(savedAudit.id);
+    const { error } = await supabase
+      .from(AUDITS_TABLE)
+      .delete()
+      .eq("id", savedAudit.id);
+
+    if (error) {
+      console.error(error);
+      setDeletingAuditId(null);
+      showMessage("Audit remove failed", "error");
+      return;
+    }
+
+    setSavedAudits((currentAudits) => currentAudits.filter((auditItem) => auditItem.id !== savedAudit.id));
+    setDeletingAuditId(null);
+    showMessage("Saved audit removed");
   };
 
   if (!isUnlocked) {
@@ -1151,7 +1331,15 @@ export function FleetAuditPage({ isMobile, onBack, wsEnergyLogo }) {
               <button type="button" onClick={clearForm} style={{ ...mutedButton, flex: isMobile ? 1 : "none", padding: "9px 10px" }}>
                 Clear
               </button>
-              <button type="button" onClick={generatePdf} style={{ ...darkButton, flex: isMobile ? 1 : "none", padding: "9px 10px" }}>
+              <button
+                type="button"
+                onClick={saveCompletedAudit}
+                disabled={isSavingAudit}
+                style={{ ...addActionButton, flex: isMobile ? 1 : "none", padding: "9px 10px", opacity: isSavingAudit ? 0.7 : 1 }}
+              >
+                {isSavingAudit ? "Saving..." : "Save Audit"}
+              </button>
+              <button type="button" onClick={() => openAuditPdf(audit)} style={{ ...darkButton, flex: isMobile ? 1 : "none", padding: "9px 10px" }}>
                 Generate PDF
               </button>
             </div>
@@ -1290,6 +1478,80 @@ export function FleetAuditPage({ isMobile, onBack, wsEnergyLogo }) {
               );
             })}
           </div>
+        </section>
+
+        <section style={{ ...card, borderRadius: 8, marginBottom: 12, padding: isMobile ? 12 : 16 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
+            <div>
+              <h2 style={{ margin: 0, color: "#111827", fontSize: isMobile ? 18 : 22, lineHeight: 1.2 }}>
+                Completed Audits
+              </h2>
+              <div style={{ color: "#64748b", fontSize: 13, fontWeight: 700, marginTop: 3 }}>
+                View or load audits saved to Supabase.
+              </div>
+            </div>
+            <button type="button" onClick={fetchSavedAudits} style={{ ...mutedButton, padding: "8px 10px", fontSize: 13 }}>
+              Refresh
+            </button>
+          </div>
+
+          {!supabase ? (
+            <div style={{ ...notificationBase, ...notificationStyles.warning }}>
+              Supabase is not connected. Run the audit table SQL and check environment variables.
+            </div>
+          ) : auditsLoading ? (
+            <p style={{ color: "#64748b", margin: 0 }}>Loading completed audits...</p>
+          ) : savedAudits.length === 0 ? (
+            <p style={{ color: "#64748b", margin: 0 }}>No completed audits saved yet.</p>
+          ) : (
+            <div style={{ display: "grid", gap: 10 }}>
+              {savedAudits.slice(0, 12).map((savedAudit) => (
+                <div key={savedAudit.id} style={{ border: "1px solid #dbe4ee", borderRadius: 8, background: "#f8fafc", padding: 10 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+                    <div>
+                      <div style={{ color: "#111827", fontSize: 14, fontWeight: 900 }}>
+                        Fleet {savedAudit.fleet || "No Fleet"} {savedAudit.customer ? `- ${savedAudit.customer}` : ""}
+                      </div>
+                      <div style={{ color: "#64748b", fontSize: 13, fontWeight: 700, marginTop: 2 }}>
+                        {formatDate(savedAudit.date) || "No date"} {savedAudit.auditor ? `• ${savedAudit.auditor}` : ""}
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", width: isMobile ? "100%" : "auto" }}>
+                      <button
+                        type="button"
+                        onClick={() => openAuditPdf(savedAudit.audit)}
+                        style={{ ...darkButton, flex: isMobile ? 1 : "none", padding: "8px 10px", fontSize: 13 }}
+                      >
+                        View PDF
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => loadSavedAudit(savedAudit)}
+                        style={{ ...addActionButton, flex: isMobile ? 1 : "none", padding: "8px 10px", fontSize: 13 }}
+                      >
+                        Load
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => removeSavedAudit(savedAudit)}
+                        disabled={deletingAuditId === savedAudit.id}
+                        style={{
+                          ...removeActionButton,
+                          flex: isMobile ? 1 : "none",
+                          padding: "8px 10px",
+                          fontSize: 13,
+                          opacity: deletingAuditId === savedAudit.id ? 0.7 : 1,
+                          cursor: deletingAuditId === savedAudit.id ? "wait" : "pointer",
+                        }}
+                      >
+                        {deletingAuditId === savedAudit.id ? "Removing..." : "Remove"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
 
         <nav
