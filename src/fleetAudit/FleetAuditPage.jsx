@@ -63,7 +63,6 @@ const pumpItems = sectionItems(
   ]],
   ["Compliance", [
     "Pump iron certification in date",
-    "Pressure transducer calibration certifications current",
     "QR codes/documentation correct",
   ]],
   ["Reliability", [
@@ -86,10 +85,9 @@ const baseAuditSections = [
     title: "Safety",
     accent: "#dc2626",
     items: [
-      "Assigned and dedicated crew coverage",
       "Proficiency tests created and implemented",
       "All personnel have proper PPE",
-      "DISA / ISN fit-for-duty current",
+      "HSI classes up to date for all personnel",
       "JSAs completed and followed",
       "Safety meetings being conducted",
     ],
@@ -259,6 +257,10 @@ const statusOptions = [
 
 const emptyItem = () => ({ status: "", notes: "", owner: "", dueDate: "" });
 const normalizeText = (value) => String(value ?? "");
+const getAuditSectionActionLabel = (section) => {
+  const unitNumber = normalizeText(section?.unitNumber).trim();
+  return unitNumber ? `${section.title} - ${unitNumber}` : section.title;
+};
 
 const makeEquipmentSectionId = (prefix) =>
   `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -335,10 +337,25 @@ const getAuditSections = (audit) => {
   ];
 };
 
+const getStoredAuditItem = (section, storedItems, index) => {
+  if (!Array.isArray(storedItems)) return {};
+
+  const hasLegacyRemovedItem = storedItems.length > section.items.length;
+  if (hasLegacyRemovedItem && section.id === "safety") {
+    return storedItems[index + 1] || {};
+  }
+
+  if (hasLegacyRemovedItem && section.equipmentKey === "pumps") {
+    return storedItems[index < 6 ? index : index + 1] || {};
+  }
+
+  return storedItems[index] || {};
+};
+
 const normalizeSectionState = (section, storedSection = {}) => ({
   unitNumber: normalizeText(storedSection.unitNumber),
   items: section.items.map((_, index) => {
-    const storedItem = Array.isArray(storedSection.items) ? storedSection.items[index] : {};
+    const storedItem = getStoredAuditItem(section, storedSection.items, index);
     return {
       ...emptyItem(),
       ...(storedItem || {}),
@@ -415,6 +432,53 @@ const makeStoredAuditPayload = (draft) =>
     audit: draft,
   });
 
+let warnedAuditPhotoStorageFallback = false;
+
+const isStorageQuotaError = (error) =>
+  error?.name === "QuotaExceededError" ||
+  error?.name === "NS_ERROR_DOM_QUOTA_REACHED" ||
+  error?.code === 22 ||
+  error?.code === 1014;
+
+const makeTextOnlyAuditDraft = (draft) => ({
+  ...draft,
+  sections: Object.fromEntries(
+    Object.entries(draft?.sections || {}).map(([sectionId, section]) => [
+      sectionId,
+      {
+        ...section,
+        photos: [],
+      },
+    ])
+  ),
+});
+
+const persistStoredAudit = (storageKey, draft, errorLabel) => {
+  if (typeof window === "undefined") return false;
+
+  try {
+    window.localStorage.setItem(storageKey, makeStoredAuditPayload(draft));
+    return true;
+  } catch (error) {
+    if (!isStorageQuotaError(error)) {
+      console.error(errorLabel, error);
+      return false;
+    }
+  }
+
+  try {
+    window.localStorage.setItem(storageKey, makeStoredAuditPayload(makeTextOnlyAuditDraft(draft)));
+    if (!warnedAuditPhotoStorageFallback) {
+      warnedAuditPhotoStorageFallback = true;
+      console.warn("Fleet audit draft was too large for local storage, so a text-only backup was saved.");
+    }
+    return true;
+  } catch (fallbackError) {
+    console.error(errorLabel, fallbackError);
+    return false;
+  }
+};
+
 const parseStoredAuditPayload = (stored) => {
   if (!stored) return null;
 
@@ -450,25 +514,11 @@ const loadStoredAudit = () => {
 };
 
 const persistAuditDraft = (draft) => {
-  if (typeof window === "undefined") return false;
-  try {
-    window.localStorage.setItem(STORAGE_KEY, makeStoredAuditPayload(draft));
-    return true;
-  } catch (error) {
-    console.error("Unable to save fleet audit draft", error);
-    return false;
-  }
+  return persistStoredAudit(STORAGE_KEY, draft, "Unable to save fleet audit draft");
 };
 
 const persistAuditAutosave = (draft) => {
-  if (typeof window === "undefined") return false;
-  try {
-    window.localStorage.setItem(AUTOSAVE_STORAGE_KEY, makeStoredAuditPayload(draft));
-    return true;
-  } catch (error) {
-    console.error("Unable to autosave fleet audit", error);
-    return false;
-  }
+  return persistStoredAudit(AUTOSAVE_STORAGE_KEY, draft, "Unable to autosave fleet audit");
 };
 
 const normalizeSavedAuditRow = (row) => {
@@ -585,7 +635,21 @@ const getAuditDocumentData = (audit) => {
     (audit.sections[section.id]?.items || [])
       .map((item, index) => ({ item, index, section }))
       .filter(({ item }) => item.status === "Needs Attention")
-  );
+  ).sort((first, second) => {
+    const firstOwner = normalizeText(first.item.owner).trim();
+    const secondOwner = normalizeText(second.item.owner).trim();
+
+    if (!firstOwner && secondOwner) return 1;
+    if (firstOwner && !secondOwner) return -1;
+
+    const ownerCompare = firstOwner.localeCompare(secondOwner, undefined, { sensitivity: "base" });
+    if (ownerCompare) return ownerCompare;
+
+    const sectionCompare = getAuditSectionActionLabel(first.section).localeCompare(getAuditSectionActionLabel(second.section), undefined, { sensitivity: "base" });
+    if (sectionCompare) return sectionCompare;
+
+    return getAuditItemLabel(first.section.items[first.index]).localeCompare(getAuditItemLabel(second.section.items[second.index]), undefined, { sensitivity: "base" });
+  });
 
   return { auditSections, auditDateLabel, metaRows, actionRows };
 };
@@ -915,7 +979,7 @@ const buildAuditDocxBlob = async (audit) => {
         },
         ...actionRows.map(({ section, item, index }) => ({
           cells: [
-            { content: docxParagraph(section.title, { size: 16, spacingAfter: 20 }) },
+            { content: docxParagraph(getAuditSectionActionLabel(section), { size: 16, spacingAfter: 20 }) },
             { content: docxParagraph(getAuditItemLabel(section.items[index]), { size: 16, spacingAfter: 20 }) },
             { content: docxParagraph(item.owner || "", { size: 16, spacingAfter: 20 }) },
             { content: docxParagraph(formatDate(item.dueDate), { size: 16, spacingAfter: 20 }) },
