@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   addActionButton,
   card,
@@ -14,9 +14,17 @@ import {
 const AUDIT_PASSWORD = "1775";
 const ACCESS_KEY = "fleetAuditUnlocked";
 const STORAGE_KEY = "fleetAuditDraft";
+const AUTOSAVE_STORAGE_KEY = "fleetAuditAutosave";
 const AUDITS_TABLE = "fleet_audits";
 const PHOTO_MAX_SIZE = 1280;
 const PHOTO_QUALITY = 0.78;
+const AUTOSAVE_INTERVAL_MS = 15000;
+const DOCX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const DOCX_PAGE_WIDTH = 12240;
+const DOCX_PAGE_HEIGHT = 15840;
+const DOCX_MARGIN = 648;
+const DOCX_CONTENT_WIDTH = DOCX_PAGE_WIDTH - DOCX_MARGIN * 2;
+const EMUS_PER_INCH = 914400;
 
 const sectionItems = (...groups) =>
   groups.flatMap(([group, items]) => items.map((text) => ({ group, text })));
@@ -400,24 +408,65 @@ const normalizeAudit = (stored) => {
   };
 };
 
-const loadStoredAudit = () => {
-  if (typeof window === "undefined") return makeInitialAudit();
+const makeStoredAuditPayload = (draft) =>
+  JSON.stringify({
+    version: 1,
+    savedAt: new Date().toISOString(),
+    audit: draft,
+  });
+
+const parseStoredAuditPayload = (stored) => {
+  if (!stored) return null;
+
   try {
-    const stored = window.localStorage.getItem(STORAGE_KEY);
-    return stored ? normalizeAudit(JSON.parse(stored)) : makeInitialAudit();
+    const parsed = JSON.parse(stored);
+    if (parsed?.audit && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const savedAt = Date.parse(parsed.savedAt || "");
+      return {
+        audit: parsed.audit,
+        savedAt: Number.isFinite(savedAt) ? savedAt : 0,
+      };
+    }
+
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return { audit: parsed, savedAt: 0 };
+    }
   } catch (error) {
     console.error("Unable to load fleet audit draft", error);
-    return makeInitialAudit();
   }
+
+  return null;
+};
+
+const loadStoredAudit = () => {
+  if (typeof window === "undefined") return makeInitialAudit();
+
+  const candidates = [STORAGE_KEY, AUTOSAVE_STORAGE_KEY]
+    .map((key) => parseStoredAuditPayload(window.localStorage.getItem(key)))
+    .filter(Boolean)
+    .sort((a, b) => b.savedAt - a.savedAt);
+
+  return candidates[0]?.audit ? normalizeAudit(candidates[0].audit) : makeInitialAudit();
 };
 
 const persistAuditDraft = (draft) => {
   if (typeof window === "undefined") return false;
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(draft));
+    window.localStorage.setItem(STORAGE_KEY, makeStoredAuditPayload(draft));
     return true;
   } catch (error) {
     console.error("Unable to save fleet audit draft", error);
+    return false;
+  }
+};
+
+const persistAuditAutosave = (draft) => {
+  if (typeof window === "undefined") return false;
+  try {
+    window.localStorage.setItem(AUTOSAVE_STORAGE_KEY, makeStoredAuditPayload(draft));
+    return true;
+  } catch (error) {
+    console.error("Unable to autosave fleet audit", error);
     return false;
   }
 };
@@ -494,8 +543,6 @@ const escapeHtml = (value) =>
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 
-const escapeHtmlWithBreaks = (value) => escapeHtml(value).replace(/\n/g, "<br>");
-
 const formatDate = (value) => {
   if (!value) return "";
   const [year, month, day] = String(value).split("-").map(Number);
@@ -522,7 +569,7 @@ const getStatusTone = (status) =>
     border: "#cbd5e1",
   };
 
-const buildPrintableHtml = (audit) => {
+const getAuditDocumentData = (audit) => {
   const auditSections = getAuditSections(audit);
   const auditDateLabel = formatDate(audit.date) || "No date";
   const metaRows = [
@@ -540,388 +587,460 @@ const buildPrintableHtml = (audit) => {
       .filter(({ item }) => item.status === "Needs Attention")
   );
 
-  const sectionHtml = auditSections
-    .map((section) => {
-      const sectionState = getSectionState(section, audit.sections);
-      const rows = section.items
-        .map((auditItem, index) => {
+  return { auditSections, auditDateLabel, metaRows, actionRows };
+};
+
+const docxText = (value) => escapeHtml(value);
+const docxColor = (value) => String(value || "").replace("#", "").toUpperCase() || "111827";
+
+const docxRunProperties = ({ bold = false, size = 18, color = "111827" } = {}) => {
+  const props = [
+    bold ? "<w:b/>" : "",
+    color ? `<w:color w:val="${docxColor(color)}"/>` : "",
+    size ? `<w:sz w:val="${size}"/>` : "",
+  ].filter(Boolean).join("");
+  return props ? `<w:rPr>${props}</w:rPr>` : "";
+};
+
+const docxParagraph = (text, options = {}) => {
+  const {
+    bold = false,
+    size = 18,
+    color = "111827",
+    keepNext = false,
+    align = "",
+    spacingAfter = 80,
+  } = options;
+  const paragraphProps = [
+    keepNext ? "<w:keepNext/>" : "",
+    align ? `<w:jc w:val="${align}"/>` : "",
+    spacingAfter !== null ? `<w:spacing w:after="${spacingAfter}"/>` : "",
+  ].filter(Boolean).join("");
+  const lines = String(text ?? "").split(/\r?\n/);
+  const textXml = lines.map((line, index) =>
+    `${index ? "<w:br/>" : ""}<w:t xml:space="preserve">${docxText(line)}</w:t>`
+  ).join("");
+
+  return `<w:p>${paragraphProps ? `<w:pPr>${paragraphProps}</w:pPr>` : ""}<w:r>${docxRunProperties({ bold, size, color })}${textXml}</w:r></w:p>`;
+};
+
+const docxCell = (content, width, options = {}) => {
+  const { fill = "", vAlign = "top" } = options;
+  const body = Array.isArray(content) ? content.join("") : content;
+  const properties = [
+    `<w:tcW w:w="${width}" w:type="dxa"/>`,
+    vAlign ? `<w:vAlign w:val="${vAlign}"/>` : "",
+    fill ? `<w:shd w:fill="${docxColor(fill)}"/>` : "",
+    `<w:tcMar><w:top w:w="80" w:type="dxa"/><w:left w:w="80" w:type="dxa"/><w:bottom w:w="80" w:type="dxa"/><w:right w:w="80" w:type="dxa"/></w:tcMar>`,
+  ].filter(Boolean).join("");
+
+  return `<w:tc><w:tcPr>${properties}</w:tcPr>${body || docxParagraph("")}</w:tc>`;
+};
+
+const docxTable = (rows, widths, options = {}) => {
+  const { border = "single" } = options;
+  const borderXml = border === "none"
+    ? ""
+    : `<w:tblBorders><w:top w:val="single" w:sz="4" w:color="CBD5E1"/><w:left w:val="single" w:sz="4" w:color="CBD5E1"/><w:bottom w:val="single" w:sz="4" w:color="CBD5E1"/><w:right w:val="single" w:sz="4" w:color="CBD5E1"/><w:insideH w:val="single" w:sz="4" w:color="CBD5E1"/><w:insideV w:val="single" w:sz="4" w:color="CBD5E1"/></w:tblBorders>`;
+  const grid = widths.map((width) => `<w:gridCol w:w="${width}"/>`).join("");
+  const body = rows.map((row) => {
+    const rowProps = [
+      row.header ? "<w:tblHeader/>" : "",
+      "<w:cantSplit/>",
+    ].filter(Boolean).join("");
+    const cells = row.cells.map((cell, index) => docxCell(cell.content, widths[index], cell)).join("");
+    return `<w:tr><w:trPr>${rowProps}</w:trPr>${cells}</w:tr>`;
+  }).join("");
+
+  return `<w:tbl><w:tblPr><w:tblW w:w="${DOCX_CONTENT_WIDTH}" w:type="dxa"/><w:tblLayout w:type="fixed"/>${borderXml}</w:tblPr><w:tblGrid>${grid}</w:tblGrid>${body}</w:tbl>`;
+};
+
+const docxStatusFill = (status) => getStatusTone(status).background;
+
+const docxActionText = (item) =>
+  [
+    item.notes || "",
+    item.owner ? `Owner: ${item.owner}` : "",
+    item.dueDate ? `Due: ${formatDate(item.dueDate)}` : "",
+  ].filter(Boolean).join("\n");
+
+const docxDataUrlToBytes = (src) => {
+  const match = String(src || "").match(/^data:(image\/[a-z0-9.+-]+);base64,(.+)$/i);
+  if (!match) return null;
+  const mime = match[1].toLowerCase();
+  const extension = mime === "image/png" ? "png" : mime === "image/jpeg" || mime === "image/jpg" ? "jpg" : "";
+  if (!extension) return null;
+
+  const binary = window.atob(match[2]);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return { bytes, extension, mime };
+};
+
+const docxImageDimensions = (src) =>
+  new Promise((resolve) => {
+    const image = new Image();
+    image.onload = () => resolve({
+      width: image.naturalWidth || image.width || 800,
+      height: image.naturalHeight || image.height || 600,
+    });
+    image.onerror = () => resolve({ width: 800, height: 600 });
+    image.src = src;
+  });
+
+const docxImageSize = (width, height) => {
+  const maxWidth = Math.round(3.45 * EMUS_PER_INCH);
+  const maxHeight = Math.round(2.75 * EMUS_PER_INCH);
+  const originalWidth = Math.max(1, width) * 9525;
+  const originalHeight = Math.max(1, height) * 9525;
+  const scale = Math.min(maxWidth / originalWidth, maxHeight / originalHeight, 1);
+  return {
+    cx: Math.max(1, Math.round(originalWidth * scale)),
+    cy: Math.max(1, Math.round(originalHeight * scale)),
+  };
+};
+
+const docxDrawing = ({ relationshipId, name, cx, cy, id }) => `
+  <w:p>
+    <w:pPr><w:spacing w:after="40"/></w:pPr>
+    <w:r>
+      <w:drawing>
+        <wp:inline distT="0" distB="0" distL="0" distR="0">
+          <wp:extent cx="${cx}" cy="${cy}"/>
+          <wp:effectExtent l="0" t="0" r="0" b="0"/>
+          <wp:docPr id="${id}" name="${docxText(name)}"/>
+          <wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr>
+          <a:graphic>
+            <a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">
+              <pic:pic>
+                <pic:nvPicPr><pic:cNvPr id="${id}" name="${docxText(name)}"/><pic:cNvPicPr/></pic:nvPicPr>
+                <pic:blipFill><a:blip r:embed="${relationshipId}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>
+                <pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>
+              </pic:pic>
+            </a:graphicData>
+          </a:graphic>
+        </wp:inline>
+      </w:drawing>
+    </w:r>
+  </w:p>
+`;
+
+const docxCrcTable = (() => {
+  const table = new Uint32Array(256);
+  for (let index = 0; index < 256; index += 1) {
+    let value = index;
+    for (let bit = 0; bit < 8; bit += 1) {
+      value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
+    }
+    table[index] = value >>> 0;
+  }
+  return table;
+})();
+
+const docxCrc32 = (bytes) => {
+  let crc = 0xffffffff;
+  for (let index = 0; index < bytes.length; index += 1) {
+    crc = docxCrcTable[(crc ^ bytes[index]) & 0xff] ^ (crc >>> 8);
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+};
+
+const docxUint16 = (value) => {
+  const bytes = new Uint8Array(2);
+  bytes[0] = value & 0xff;
+  bytes[1] = (value >>> 8) & 0xff;
+  return bytes;
+};
+
+const docxUint32 = (value) => {
+  const bytes = new Uint8Array(4);
+  bytes[0] = value & 0xff;
+  bytes[1] = (value >>> 8) & 0xff;
+  bytes[2] = (value >>> 16) & 0xff;
+  bytes[3] = (value >>> 24) & 0xff;
+  return bytes;
+};
+
+const docxConcatBytes = (parts) => {
+  const totalLength = parts.reduce((sum, part) => sum + part.length, 0);
+  const output = new Uint8Array(totalLength);
+  let offset = 0;
+  parts.forEach((part) => {
+    output.set(part, offset);
+    offset += part.length;
+  });
+  return output;
+};
+
+const docxStringBytes = (value) => new TextEncoder().encode(value);
+
+const docxZipBlob = (files) => {
+  const now = new Date();
+  const dosTime = (now.getHours() << 11) | (now.getMinutes() << 5) | Math.floor(now.getSeconds() / 2);
+  const dosDate = ((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate();
+  const localParts = [];
+  const centralParts = [];
+  let offset = 0;
+
+  files.forEach((file) => {
+    const nameBytes = docxStringBytes(file.path);
+    const dataBytes = typeof file.data === "string" ? docxStringBytes(file.data) : file.data;
+    const crc = docxCrc32(dataBytes);
+    const localHeader = docxConcatBytes([
+      docxUint32(0x04034b50),
+      docxUint16(20),
+      docxUint16(0),
+      docxUint16(0),
+      docxUint16(dosTime),
+      docxUint16(dosDate),
+      docxUint32(crc),
+      docxUint32(dataBytes.length),
+      docxUint32(dataBytes.length),
+      docxUint16(nameBytes.length),
+      docxUint16(0),
+      nameBytes,
+    ]);
+    const centralHeader = docxConcatBytes([
+      docxUint32(0x02014b50),
+      docxUint16(20),
+      docxUint16(20),
+      docxUint16(0),
+      docxUint16(0),
+      docxUint16(dosTime),
+      docxUint16(dosDate),
+      docxUint32(crc),
+      docxUint32(dataBytes.length),
+      docxUint32(dataBytes.length),
+      docxUint16(nameBytes.length),
+      docxUint16(0),
+      docxUint16(0),
+      docxUint16(0),
+      docxUint16(0),
+      docxUint32(0),
+      docxUint32(offset),
+      nameBytes,
+    ]);
+
+    localParts.push(localHeader, dataBytes);
+    centralParts.push(centralHeader);
+    offset += localHeader.length + dataBytes.length;
+  });
+
+  const centralOffset = offset;
+  const centralDirectory = docxConcatBytes(centralParts);
+  const endRecord = docxConcatBytes([
+    docxUint32(0x06054b50),
+    docxUint16(0),
+    docxUint16(0),
+    docxUint16(files.length),
+    docxUint16(files.length),
+    docxUint32(centralDirectory.length),
+    docxUint32(centralOffset),
+    docxUint16(0),
+  ]);
+
+  return new Blob([docxConcatBytes([...localParts, centralDirectory, endRecord])], { type: DOCX_CONTENT_TYPE });
+};
+
+const getAuditDocxFileName = (audit) => {
+  const date = audit.date || "no-date";
+  const fleet = audit.fleet === "yard" ? "yard" : `fleet-${audit.fleet || "unknown"}`;
+  return `pumpdown-readiness-audit-${fleet}-${date}.docx`.replace(/[^a-z0-9._-]+/gi, "-");
+};
+
+const buildAuditDocxBlob = async (audit) => {
+  const { auditSections, auditDateLabel, metaRows, actionRows } = getAuditDocumentData(audit);
+  const mediaFiles = [];
+  const imageRelationships = [];
+  let imageIndex = 1;
+  const documentParts = [
+    docxParagraph("PUMPDOWN FLEET READINESS AUDIT", { bold: true, size: 30, spacingAfter: 80 }),
+    docxParagraph(`Audit Date ${auditDateLabel}`, { size: 18, spacingAfter: 80 }),
+    docxTable(
+      [
+        {
+          cells: metaRows.slice(0, 3).map(([key, value]) => ({
+            content: [
+              docxParagraph(key, { bold: true, size: 14, color: "475569", spacingAfter: 20 }),
+              docxParagraph(value || "", { size: 18, spacingAfter: 20 }),
+            ],
+            fill: "F8FAFC",
+          })),
+        },
+        {
+          cells: metaRows.slice(3, 6).map(([key, value]) => ({
+            content: [
+              docxParagraph(key, { bold: true, size: 14, color: "475569", spacingAfter: 20 }),
+              docxParagraph(value || "", { size: 18, spacingAfter: 20 }),
+            ],
+            fill: "F8FAFC",
+          })),
+        },
+      ],
+      [3648, 3648, 3648]
+    ),
+  ];
+
+  const addPhoto = async (photo) => {
+    const data = docxDataUrlToBytes(photo.src);
+    if (!data) return null;
+    const dimensions = await docxImageDimensions(photo.src);
+    const size = docxImageSize(dimensions.width, dimensions.height);
+    const relationshipId = `rId${imageIndex}`;
+    const name = photo.name || `Photo ${imageIndex}`;
+    mediaFiles.push({
+      path: `word/media/image${imageIndex}.${data.extension}`,
+      data: data.bytes,
+    });
+    imageRelationships.push({
+      id: relationshipId,
+      target: `media/image${imageIndex}.${data.extension}`,
+    });
+    imageIndex += 1;
+    return { relationshipId, name, ...size, id: imageIndex + 1000 };
+  };
+
+  if (actionRows.length) {
+    documentParts.push(docxParagraph("Deficiency Action List", { bold: true, size: 24, keepNext: true, spacingAfter: 80 }));
+    documentParts.push(docxTable(
+      [
+        {
+          header: true,
+          cells: ["Section", "Item", "Owner", "Due", "Notes"].map((heading) => ({
+            content: docxParagraph(heading, { bold: true, size: 14, color: "334155", spacingAfter: 20 }),
+            fill: "F1F5F9",
+          })),
+        },
+        ...actionRows.map(({ section, item, index }) => ({
+          cells: [
+            { content: docxParagraph(section.title, { size: 16, spacingAfter: 20 }) },
+            { content: docxParagraph(getAuditItemLabel(section.items[index]), { size: 16, spacingAfter: 20 }) },
+            { content: docxParagraph(item.owner || "", { size: 16, spacingAfter: 20 }) },
+            { content: docxParagraph(formatDate(item.dueDate), { size: 16, spacingAfter: 20 }) },
+            { content: docxParagraph(item.notes || "", { size: 16, spacingAfter: 20 }) },
+          ],
+        })),
+      ],
+      [1800, 3000, 1800, 1600, 2744]
+    ));
+  }
+
+  for (const section of auditSections) {
+    const sectionState = getSectionState(section, audit.sections);
+    documentParts.push(docxParagraph(section.title, { bold: true, size: 24, color: section.accent, keepNext: true, spacingAfter: 80 }));
+    if (section.unitLabel) {
+      documentParts.push(docxParagraph(`${section.unitLabel}: ${section.unitNumber || ""}`, { bold: true, size: 16, color: "475569", keepNext: true, spacingAfter: 80 }));
+    }
+
+    documentParts.push(docxTable(
+      [
+        {
+          header: true,
+          cells: ["Audit Item", "Status", "Notes / Action"].map((heading) => ({
+            content: docxParagraph(heading, { bold: true, size: 14, color: "334155", spacingAfter: 20 }),
+            fill: "F1F5F9",
+          })),
+        },
+        ...section.items.map((auditItem, index) => {
           const item = sectionState.items[index] || emptyItem();
-          const tone = getStatusTone(item.status);
           const group = getAuditItemGroup(auditItem);
-          const action = [
-            item.notes ? escapeHtmlWithBreaks(item.notes) : "",
-            item.owner ? `Owner: ${escapeHtml(item.owner)}` : "",
-            item.dueDate ? `Due: ${escapeHtml(formatDate(item.dueDate))}` : "",
-          ]
-            .filter(Boolean)
-            .join("<br>");
-
-          return `
-            <tr>
-              <td>${group ? `<span class="group">${escapeHtml(group)}</span>` : ""}${escapeHtml(getAuditItemText(auditItem))}</td>
-              <td><span style="color: ${tone.color}; border-color: ${tone.border}; background: ${tone.background};" class="status">${escapeHtml(item.status || "Open")}</span></td>
-              <td>${action || "&nbsp;"}</td>
-            </tr>
-          `;
-        })
-        .join("");
-
-      const photoHtml = sectionState.photos?.length
-        ? `
-          <div class="photos">
-            ${Array.from({ length: Math.ceil(sectionState.photos.length / 2) }, (_, rowIndex) => {
-              const rowPhotos = sectionState.photos.slice(rowIndex * 2, rowIndex * 2 + 2);
-              return `
-                <div class="photo-row">
-                  ${rowPhotos
-                    .map(
-                      (photo) => `
-                        <figure class="photo-card">
-                          <img src="${escapeHtml(photo.src)}" alt="${escapeHtml(photo.name)}">
-                          <figcaption>${escapeHtml(photo.name)}</figcaption>
-                        </figure>
-                      `
-                    )
-                    .join("")}
-                  ${rowPhotos.length === 1 ? `<div class="photo-card photo-placeholder" aria-hidden="true"></div>` : ""}
-                </div>
-              `;
-            }).join("")}
-          </div>
-        `
-        : "";
-
-      return `
-        <section class="audit-section">
-          <div class="section-start">
-            <h2 style="border-color: ${section.accent};">${escapeHtml(section.title)}</h2>
-            ${section.unitLabel ? `<div class="unit-line"><strong>${escapeHtml(section.unitLabel)}:</strong> ${escapeHtml(section.unitNumber)}</div>` : ""}
-          </div>
-          <table>
-            <thead>
-              <tr>
-                <th>Audit Item</th>
-                <th>Status</th>
-                <th>Notes / Action</th>
-              </tr>
-            </thead>
-            <tbody>${rows}</tbody>
-          </table>
-          ${photoHtml}
-        </section>
-      `;
-    })
-    .join("");
-
-  const actionsHtml = actionRows.length
-    ? `
-      <section class="audit-section">
-        <div class="section-start">
-          <h2>Deficiency Action List</h2>
-        </div>
-        <table>
-          <thead>
-            <tr>
-              <th>Section</th>
-              <th>Item</th>
-              <th>Owner</th>
-              <th>Due</th>
-              <th>Notes</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${actionRows
-              .map(({ section, item, index }) => `
-                <tr>
-                  <td>${escapeHtml(section.title)}</td>
-                  <td>${escapeHtml(getAuditItemLabel(section.items[index]))}</td>
-                  <td>${escapeHtml(item.owner)}</td>
-                  <td>${escapeHtml(formatDate(item.dueDate))}</td>
-                  <td>${escapeHtml(item.notes)}</td>
-                </tr>
-              `)
-              .join("")}
-          </tbody>
-        </table>
-      </section>
-    `
-    : "";
-
-  return `
-    <!doctype html>
-    <html>
-      <head>
-        <meta charset="utf-8">
-        <title>${escapeHtml(`Pumpdown Fleet Readiness Audit - ${auditDateLabel}`)}</title>
-        <style>
-          @page { size: letter; margin: 0.45in; }
-          * { box-sizing: border-box; }
-          html { background: #ffffff; }
-          body {
-            width: 7.6in;
-            margin: 0;
-            color: #111827;
-            font-family: Arial, Helvetica, sans-serif;
-            font-size: 10px;
-            line-height: 1.35;
-          }
-          h1 {
-            margin: 0 0 6px;
-            font-size: 20px;
-            letter-spacing: 0;
-          }
-          h2 {
-            margin: 0 0 8px;
-            padding-left: 8px;
-            border-left: 4px solid #111827;
-            font-size: 14px;
-          }
-          .header {
-            display: grid;
-            grid-template-columns: 1fr auto;
-            gap: 16px;
-            align-items: start;
-            border-bottom: 2px solid #111827;
-            padding-bottom: 12px;
-            margin-bottom: 14px;
-          }
-          .summary {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 6px;
-            margin: 12px 0;
-          }
-          .summary div, .meta div {
-            border: 1px solid #cbd5e1;
-            padding: 6px;
-            min-height: 34px;
-          }
-          .summary strong, .meta strong {
-            display: block;
-            color: #475569;
-            font-size: 8px;
-            text-transform: uppercase;
-          }
-          .summary span {
-            display: block;
-            font-size: 14px;
-            font-weight: 700;
-          }
-          .meta {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 6px;
-          }
-          .audit-section {
-            margin: 14px 0 0;
-          }
-          .force-page-break {
-            break-before: page;
-            page-break-before: always;
-          }
-          .section-start {
-            break-inside: avoid;
-            break-after: avoid;
-            page-break-inside: avoid;
-            page-break-after: avoid;
-          }
-          h2, .unit-line, thead {
-            break-after: avoid;
-            page-break-after: avoid;
-          }
-          table {
-            width: 100%;
-            border-collapse: collapse;
-            table-layout: fixed;
-          }
-          thead { display: table-header-group; }
-          tr {
-            break-inside: avoid;
-            page-break-inside: avoid;
-          }
-          th, td {
-            border: 1px solid #cbd5e1;
-            padding: 6px;
-            vertical-align: top;
-          }
-          th {
-            background: #f1f5f9;
-            color: #334155;
-            font-size: 8px;
-            text-transform: uppercase;
-            text-align: left;
-          }
-          th:nth-child(1), td:nth-child(1) { width: 40%; }
-          th:nth-child(2), td:nth-child(2) { width: 18%; }
-          th:nth-child(3), td:nth-child(3) { width: 42%; }
-          .status {
-            display: inline-block;
-            border: 1px solid;
-            border-radius: 999px;
-            padding: 2px 6px;
-            font-weight: 700;
-            white-space: nowrap;
-          }
-          .group {
-            display: block;
-            color: #475569;
-            font-size: 8px;
-            font-weight: 700;
-            margin-bottom: 2px;
-            text-transform: uppercase;
-          }
-          .unit-line {
-            border: 1px solid #cbd5e1;
-            background: #f8fafc;
-            margin: 0 0 8px;
-            padding: 6px;
-          }
-          .unit-line strong {
-            color: #475569;
-            font-size: 8px;
-            text-transform: uppercase;
-          }
-          .photos {
-            display: block;
-            margin-top: 8px;
-            break-inside: auto;
-            page-break-inside: auto;
-          }
-          .photo-row {
-            display: flex;
-            align-items: flex-start;
-            gap: 8px;
-            margin: 8px 0 0;
-            break-inside: avoid;
-            break-inside: avoid-page;
-            page-break-inside: avoid;
-          }
-          .photo-row:first-child {
-            margin-top: 0;
-          }
-          .photo-card {
-            flex: 1 1 0;
-            min-width: 0;
-            margin: 0;
-            break-inside: avoid;
-            break-inside: avoid-page;
-            page-break-inside: avoid;
-          }
-          .photo-placeholder {
-            visibility: hidden;
-          }
-          .photo-card img {
-            display: block;
-            width: 100%;
-            max-height: 260px;
-            object-fit: contain;
-            border: 1px solid #cbd5e1;
-            break-inside: avoid;
-            break-inside: avoid-page;
-            page-break-inside: avoid;
-          }
-          .photo-card figcaption {
-            color: #475569;
-            font-size: 8px;
-            margin-top: 3px;
-            break-inside: avoid;
-            break-inside: avoid-page;
-            page-break-inside: avoid;
-          }
-          .notes {
-            border: 1px solid #cbd5e1;
-            padding: 8px;
-            min-height: 44px;
-            white-space: pre-wrap;
-          }
-          @media print {
-            body { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
-          }
-        </style>
-      </head>
-      <body>
-        <header class="header">
-          <div>
-            <h1>PUMPDOWN FLEET READINESS AUDIT</h1>
-            <div>Audit Date ${escapeHtml(auditDateLabel)}</div>
-          </div>
-          <div style="text-align: right; font-weight: 700;">Fleet ${escapeHtml(audit.fleet)}</div>
-        </header>
-
-        <div class="meta">
-          ${metaRows.map(([key, value]) => `<div><strong>${escapeHtml(key)}</strong>${escapeHtml(value)}</div>`).join("")}
-        </div>
-
-        ${actionsHtml}
-        ${sectionHtml}
-
-        <script>
-          const preparePrintLayout = () => {
-            const pageHeight = 10.1 * 96;
-            const bodyTop = document.body.getBoundingClientRect().top;
-
-            const heightOf = (element) => element ? element.getBoundingClientRect().height : 0;
-            const forceBreakIfNeeded = (element, keepHeight, buffer = 6) => {
-              if (!element || keepHeight >= pageHeight) return false;
-
-              const rect = element.getBoundingClientRect();
-              const elementTop = rect.top - bodyTop;
-              const usedOnPage = ((elementTop % pageHeight) + pageHeight) % pageHeight;
-              const remainingOnPage = pageHeight - usedOnPage;
-
-              if (usedOnPage > 0 && remainingOnPage < keepHeight + buffer) {
-                if (element.classList.contains("force-page-break")) return false;
-                element.classList.add("force-page-break");
-                return true;
-              }
-
-              return false;
-            };
-
-            Array.from(document.querySelectorAll(".force-page-break")).forEach((element) => {
-              element.classList.remove("force-page-break");
-            });
-
-            for (let pass = 0; pass < 3; pass += 1) {
-              let changed = false;
-
-              Array.from(document.querySelectorAll(".audit-section")).forEach((section) => {
-                const sectionStart = section.querySelector(".section-start");
-                const tableHead = section.querySelector("thead");
-                const firstRow = section.querySelector("tbody tr");
-                const firstRowHeight = Math.min(heightOf(firstRow), 80);
-                const keepHeight = heightOf(sectionStart) + heightOf(tableHead) + firstRowHeight + 8;
-
-                changed = forceBreakIfNeeded(section, keepHeight) || changed;
-              });
-
-              Array.from(document.querySelectorAll(".photo-row")).forEach((row) => {
-                changed = forceBreakIfNeeded(row, heightOf(row), 0) || changed;
-              });
-
-              if (!changed) break;
-            }
+          return {
+            cells: [
+              {
+                content: [
+                  group ? docxParagraph(group, { bold: true, size: 14, color: "475569", spacingAfter: 20 }) : "",
+                  docxParagraph(getAuditItemText(auditItem), { size: 16, spacingAfter: 20 }),
+                ],
+              },
+              {
+                content: docxParagraph(item.status || "Open", { bold: true, size: 16, spacingAfter: 20 }),
+                fill: docxStatusFill(item.status),
+              },
+              {
+                content: docxParagraph(docxActionText(item), { size: 16, spacingAfter: 20 }),
+              },
+            ],
           };
-          const printReport = () => window.setTimeout(() => {
-            preparePrintLayout();
-            window.setTimeout(() => {
-              preparePrintLayout();
-              window.print();
-            }, 50);
-          }, 300);
-          const images = Array.from(document.images);
-          if (!images.length) {
-            printReport();
-          } else {
-            Promise.all(images.map((image) => image.complete ? Promise.resolve() : new Promise((resolve) => {
-              image.onload = resolve;
-              image.onerror = resolve;
-            }))).then(printReport);
-          }
-        </script>
-      </body>
-    </html>
-  `;
+        }),
+      ],
+      [4400, 1800, 4744]
+    ));
+
+    const photos = sectionState.photos || [];
+    if (photos.length) {
+      documentParts.push(docxParagraph("Supporting Pictures", { bold: true, size: 18, keepNext: true, spacingAfter: 60 }));
+      for (let index = 0; index < photos.length; index += 2) {
+        const rowPhotos = photos.slice(index, index + 2);
+        const cells = [];
+        for (const photo of rowPhotos) {
+          const image = await addPhoto(photo);
+          cells.push({
+            content: image
+              ? [
+                docxDrawing(image),
+                docxParagraph(photo.name || "Supporting photo", { size: 14, color: "475569", align: "center", spacingAfter: 20 }),
+              ]
+              : docxParagraph(photo.name || "Supporting photo", { size: 14, color: "475569", spacingAfter: 20 }),
+          });
+        }
+        if (cells.length === 1) cells.push({ content: docxParagraph("") });
+        documentParts.push(docxTable([{ cells }], [5472, 5472], { border: "none" }));
+      }
+    }
+  }
+
+  const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+    <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">
+      <w:body>
+        ${documentParts.join("")}
+        <w:sectPr>
+          <w:pgSz w:w="${DOCX_PAGE_WIDTH}" w:h="${DOCX_PAGE_HEIGHT}"/>
+          <w:pgMar w:top="${DOCX_MARGIN}" w:right="${DOCX_MARGIN}" w:bottom="${DOCX_MARGIN}" w:left="${DOCX_MARGIN}" w:header="360" w:footer="360" w:gutter="0"/>
+        </w:sectPr>
+      </w:body>
+    </w:document>`;
+  const documentRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+    <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+      ${imageRelationships.map((relationship) => `<Relationship Id="${relationship.id}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="${relationship.target}"/>`).join("")}
+    </Relationships>`;
+
+  return docxZipBlob([
+    {
+      path: "[Content_Types].xml",
+      data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+        <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+          <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+          <Default Extension="xml" ContentType="application/xml"/>
+          <Default Extension="jpg" ContentType="image/jpeg"/>
+          <Default Extension="jpeg" ContentType="image/jpeg"/>
+          <Default Extension="png" ContentType="image/png"/>
+          <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+        </Types>`,
+    },
+    {
+      path: "_rels/.rels",
+      data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+        <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+          <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+        </Relationships>`,
+    },
+    { path: "word/document.xml", data: documentXml },
+    { path: "word/_rels/document.xml.rels", data: documentRels },
+    ...mediaFiles,
+  ]);
+};
+
+const downloadDocxBlob = (blob, fileName) => {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 };
 
 export function FleetAuditPage({ isMobile, onBack, wsEnergyLogo }) {
@@ -939,7 +1058,9 @@ export function FleetAuditPage({ isMobile, onBack, wsEnergyLogo }) {
   const [savedAudits, setSavedAudits] = useState([]);
   const [auditsLoading, setAuditsLoading] = useState(true);
   const [isSavingAudit, setIsSavingAudit] = useState(false);
+  const [isBuildingAuditDocx, setIsBuildingAuditDocx] = useState(false);
   const [deletingAuditId, setDeletingAuditId] = useState(null);
+  const latestAuditRef = useRef(audit);
   const auditSections = useMemo(() => getAuditSections(audit), [audit]);
   const auditEquipment = useMemo(
     () => normalizeEquipment(audit.equipment, audit.sections),
@@ -981,13 +1102,29 @@ export function FleetAuditPage({ isMobile, onBack, wsEnergyLogo }) {
   }, [fetchSavedAudits]);
 
   useEffect(() => {
+    latestAuditRef.current = audit;
     persistAuditDraft(audit);
   }, [audit]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+
+    const autosaveCurrentAudit = () => {
+      persistAuditAutosave(latestAuditRef.current);
+    };
+
+    autosaveCurrentAudit();
+    const intervalId = window.setInterval(autosaveCurrentAudit, AUTOSAVE_INTERVAL_MS);
+    return () => window.clearInterval(intervalId);
+  }, []);
+
+  useEffect(() => {
     if (typeof window === "undefined" || typeof document === "undefined") return undefined;
 
-    const saveCurrentDraft = () => persistAuditDraft(audit);
+    const saveCurrentDraft = () => {
+      persistAuditDraft(latestAuditRef.current);
+      persistAuditAutosave(latestAuditRef.current);
+    };
     const saveOnVisibilityChange = () => {
       if (document.visibilityState === "hidden") saveCurrentDraft();
     };
@@ -1229,26 +1366,20 @@ export function FleetAuditPage({ isMobile, onBack, wsEnergyLogo }) {
     showMessage("Audit form cleared");
   };
 
-  const openAuditPdf = (auditToOpen = audit) => {
-    const reportWindow = window.open("", "_blank");
-    if (!reportWindow) {
-      showMessage("Allow pop-ups to generate the PDF", "error");
-      return;
-    }
-
+  const downloadAuditDocx = async (auditToDownload = audit) => {
+    if (isBuildingAuditDocx) return;
+    setIsBuildingAuditDocx(true);
     try {
-      const reportUrl = new URL(window.location.href);
-      reportUrl.hash = "/fleet-audit-print";
-      reportWindow.history.replaceState(null, "", reportUrl.toString());
+      const normalizedAudit = normalizeAudit(auditToDownload);
+      const blob = await buildAuditDocxBlob(normalizedAudit);
+      downloadDocxBlob(blob, getAuditDocxFileName(normalizedAudit));
+      showMessage("Audit DOCX downloaded");
     } catch (error) {
-      console.error("Unable to update report URL", error);
+      console.error("Unable to build audit DOCX", error);
+      showMessage("Audit DOCX failed", "error");
+    } finally {
+      setIsBuildingAuditDocx(false);
     }
-
-    reportWindow.document.open();
-    reportWindow.document.write(buildPrintableHtml(auditToOpen));
-    reportWindow.document.close();
-    reportWindow.focus();
-    showMessage("PDF report opened");
   };
 
   const saveCompletedAudit = async () => {
@@ -1445,8 +1576,13 @@ export function FleetAuditPage({ isMobile, onBack, wsEnergyLogo }) {
               >
                 {isSavingAudit ? "Saving..." : "Save Audit"}
               </button>
-              <button type="button" onClick={() => openAuditPdf(audit)} style={{ ...darkButton, flex: isMobile ? 1 : "none", padding: "9px 10px" }}>
-                Generate PDF
+              <button
+                type="button"
+                onClick={() => downloadAuditDocx(audit)}
+                disabled={isBuildingAuditDocx}
+                style={{ ...darkButton, flex: isMobile ? 1 : "none", padding: "9px 10px", opacity: isBuildingAuditDocx ? 0.65 : 1 }}
+              >
+                {isBuildingAuditDocx ? "Building DOCX..." : "Download DOCX"}
               </button>
             </div>
           </div>
@@ -1593,7 +1729,7 @@ export function FleetAuditPage({ isMobile, onBack, wsEnergyLogo }) {
                 Completed Audits
               </h2>
               <div style={{ color: "#64748b", fontSize: 13, fontWeight: 700, marginTop: 3 }}>
-                View or load audits saved to Supabase.
+                Download or load audits saved to Supabase.
               </div>
             </div>
             <button type="button" onClick={fetchSavedAudits} style={{ ...mutedButton, padding: "8px 10px", fontSize: 13 }}>
@@ -1625,10 +1761,11 @@ export function FleetAuditPage({ isMobile, onBack, wsEnergyLogo }) {
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap", width: isMobile ? "100%" : "auto" }}>
                       <button
                         type="button"
-                        onClick={() => openAuditPdf(savedAudit.audit)}
+                        onClick={() => downloadAuditDocx(savedAudit.audit)}
+                        disabled={isBuildingAuditDocx}
                         style={{ ...darkButton, flex: isMobile ? 1 : "none", padding: "8px 10px", fontSize: 13 }}
                       >
-                        View PDF
+                        DOCX
                       </button>
                       <button
                         type="button"
