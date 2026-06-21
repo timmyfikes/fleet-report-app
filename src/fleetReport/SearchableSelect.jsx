@@ -1,11 +1,12 @@
 import React, { memo, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { input } from "./config";
 
 export const SearchableSelect = memo(function SearchableSelect({ value, onChange, options, placeholder, enableOther = false }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isCustomEntry, setIsCustomEntry] = useState(false);
   const inputRef = useRef(null);
-  const isTypingCustom = isCustomEntry && !options.includes(value);
+  const isTypingCustom = isCustomEntry;
 
   const filteredOptions = useMemo(() => {
     const q = (isTypingCustom ? value : "").toLowerCase().trim();
@@ -16,10 +17,6 @@ export const SearchableSelect = memo(function SearchableSelect({ value, onChange
   const focusCustomInput = () => {
     const field = inputRef.current;
     if (!field) return;
-
-    field.readOnly = false;
-    field.removeAttribute("readonly");
-    field.blur();
 
     try {
       field.focus({ preventScroll: true });
@@ -37,29 +34,41 @@ export const SearchableSelect = memo(function SearchableSelect({ value, onChange
 
   const chooseOther = (event) => {
     event.preventDefault();
-    setIsCustomEntry(true);
-    onChange("");
-    setIsOpen(false);
+    event.stopPropagation();
+    flushSync(() => {
+      setIsCustomEntry(true);
+      onChange("");
+      setIsOpen(false);
+    });
     focusCustomInput();
   };
 
   return (
     <div style={{ position: "relative", marginBottom: 8 }}>
       <input
+        key={isTypingCustom ? "custom-entry" : "option-picker"}
         ref={inputRef}
         style={{ ...input, paddingRight: 36, cursor: isTypingCustom ? "text" : "pointer" }}
         placeholder={placeholder}
         value={value}
         readOnly={!isTypingCustom}
-        onClick={() => setIsOpen(true)}
+        autoCapitalize="characters"
+        autoCorrect="off"
+        spellCheck={false}
+        onClick={() => {
+          if (!isTypingCustom) {
+            setIsOpen(true);
+          }
+        }}
         onFocus={() => {
-          setIsOpen(true);
+          if (!isTypingCustom) {
+            setIsOpen(true);
+          }
         }}
         onChange={(e) => {
           if (isTypingCustom) {
             onChange(e.target.value);
           }
-          setIsOpen(true);
         }}
         onBlur={() => {
           window.setTimeout(() => {
@@ -115,7 +124,7 @@ export const SearchableSelect = memo(function SearchableSelect({ value, onChange
           {enableOther ? (
             <button
               type="button"
-              onMouseDown={chooseOther}
+              onMouseDown={(e) => e.preventDefault()}
               onTouchEnd={chooseOther}
               onClick={chooseOther}
               style={{
