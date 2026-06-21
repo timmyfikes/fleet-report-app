@@ -593,8 +593,10 @@ const buildPrintableHtml = (audit) => {
 
       return `
         <section class="audit-section">
-          <h2 style="border-color: ${section.accent};">${escapeHtml(section.title)}</h2>
-          ${section.unitLabel ? `<div class="unit-line"><strong>${escapeHtml(section.unitLabel)}:</strong> ${escapeHtml(section.unitNumber)}</div>` : ""}
+          <div class="section-start">
+            <h2 style="border-color: ${section.accent};">${escapeHtml(section.title)}</h2>
+            ${section.unitLabel ? `<div class="unit-line"><strong>${escapeHtml(section.unitLabel)}:</strong> ${escapeHtml(section.unitNumber)}</div>` : ""}
+          </div>
           <table>
             <thead>
               <tr>
@@ -614,7 +616,9 @@ const buildPrintableHtml = (audit) => {
   const actionsHtml = actionRows.length
     ? `
       <section class="audit-section">
-        <h2>Deficiency Action List</h2>
+        <div class="section-start">
+          <h2>Deficiency Action List</h2>
+        </div>
         <table>
           <thead>
             <tr>
@@ -654,6 +658,7 @@ const buildPrintableHtml = (audit) => {
           * { box-sizing: border-box; }
           html { background: #ffffff; }
           body {
+            width: 7.6in;
             margin: 0;
             color: #111827;
             font-family: Arial, Helvetica, sans-serif;
@@ -708,13 +713,17 @@ const buildPrintableHtml = (audit) => {
             gap: 6px;
           }
           .audit-section {
-            break-inside: avoid;
-            page-break-inside: avoid;
             margin: 14px 0 0;
           }
           .force-page-break {
             break-before: page;
             page-break-before: always;
+          }
+          .section-start {
+            break-inside: avoid;
+            break-after: avoid;
+            page-break-inside: avoid;
+            page-break-after: avoid;
           }
           h2, .unit-line, thead {
             break-after: avoid;
@@ -724,8 +733,6 @@ const buildPrintableHtml = (audit) => {
             width: 100%;
             border-collapse: collapse;
             table-layout: fixed;
-            break-inside: avoid;
-            page-break-inside: avoid;
           }
           thead { display: table-header-group; }
           tr {
@@ -781,9 +788,9 @@ const buildPrintableHtml = (audit) => {
             page-break-inside: auto;
           }
           .photo-row {
-            display: table;
-            table-layout: fixed;
-            width: 100%;
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
             margin: 8px 0 0;
             break-inside: avoid;
             break-inside: avoid-page;
@@ -793,20 +800,12 @@ const buildPrintableHtml = (audit) => {
             margin-top: 0;
           }
           .photo-card {
-            display: table-cell;
-            width: 50%;
+            flex: 1 1 0;
+            min-width: 0;
             margin: 0;
-            padding: 0 4px;
-            vertical-align: top;
             break-inside: avoid;
             break-inside: avoid-page;
             page-break-inside: avoid;
-          }
-          .photo-card:first-child {
-            padding-left: 0;
-          }
-          .photo-card:last-child {
-            padding-right: 0;
           }
           .photo-placeholder {
             visibility: hidden;
@@ -859,29 +858,49 @@ const buildPrintableHtml = (audit) => {
         <script>
           const preparePrintLayout = () => {
             const pageHeight = 10.1 * 96;
-            const pageBreakBuffer = 48;
             const bodyTop = document.body.getBoundingClientRect().top;
-            const keepTogether = (selector) => {
-              Array.from(document.querySelectorAll(selector)).forEach((element) => {
-                const rect = element.getBoundingClientRect();
-                if (rect.height >= pageHeight) return;
 
-                const elementTop = rect.top - bodyTop;
-                const usedOnPage = ((elementTop % pageHeight) + pageHeight) % pageHeight;
-                const remainingOnPage = pageHeight - usedOnPage;
+            const heightOf = (element) => element ? element.getBoundingClientRect().height : 0;
+            const forceBreakIfNeeded = (element, keepHeight, buffer = 6) => {
+              if (!element || keepHeight >= pageHeight) return false;
 
-                if (usedOnPage > 0 && remainingOnPage < rect.height + pageBreakBuffer) {
-                  element.classList.add("force-page-break");
-                }
-              });
+              const rect = element.getBoundingClientRect();
+              const elementTop = rect.top - bodyTop;
+              const usedOnPage = ((elementTop % pageHeight) + pageHeight) % pageHeight;
+              const remainingOnPage = pageHeight - usedOnPage;
+
+              if (usedOnPage > 0 && remainingOnPage < keepHeight + buffer) {
+                if (element.classList.contains("force-page-break")) return false;
+                element.classList.add("force-page-break");
+                return true;
+              }
+
+              return false;
             };
 
             Array.from(document.querySelectorAll(".force-page-break")).forEach((element) => {
               element.classList.remove("force-page-break");
             });
 
-            keepTogether(".audit-section");
-            keepTogether(".photo-row");
+            for (let pass = 0; pass < 3; pass += 1) {
+              let changed = false;
+
+              Array.from(document.querySelectorAll(".audit-section")).forEach((section) => {
+                const sectionStart = section.querySelector(".section-start");
+                const tableHead = section.querySelector("thead");
+                const firstRow = section.querySelector("tbody tr");
+                const firstRowHeight = Math.min(heightOf(firstRow), 80);
+                const keepHeight = heightOf(sectionStart) + heightOf(tableHead) + firstRowHeight + 8;
+
+                changed = forceBreakIfNeeded(section, keepHeight) || changed;
+              });
+
+              Array.from(document.querySelectorAll(".photo-row")).forEach((row) => {
+                changed = forceBreakIfNeeded(row, heightOf(row), 0) || changed;
+              });
+
+              if (!changed) break;
+            }
           };
           const printReport = () => window.setTimeout(() => {
             preparePrintLayout();
