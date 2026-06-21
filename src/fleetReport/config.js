@@ -391,7 +391,7 @@ export const buildFleetStateFromDraft = (fleet) => {
 };
 
 export const PUMP_OPTIONS = [
-  ...Array.from({ length: 11 }, (_, idx) => `FPU-${String(idx + 1).padStart(3, "0")}`),
+  ...Array.from({ length: 16 }, (_, idx) => `FPU-${String(idx + 1).padStart(3, "0")}`),
   "DPU-001 (Roadside)",
   "DPU-001 (Curbside)",
   "LTC-2428",
@@ -401,7 +401,9 @@ export const PUMP_OPTIONS = [
   "LTC-3068",
 ];
 
-export const TRACTOR_OPTIONS = Array.from({ length: 21 }, (_, idx) => `RT-${String(idx + 5).padStart(2, "0")}`);
+export const TRACTOR_OPTIONS = Array.from({ length: 24 }, (_, idx) => `RT-${String(idx + 5).padStart(2, "0")}`);
+
+export const TRUCK_OPTIONS = ["416","464","496","706","710","715","721","722","723","724","725","727","728","745","746","747","749","767","768","769"];
 
 export const COMMAND_CENTER_OPTIONS = Array.from({ length: 7 }, (_, i) => `CT-${String(i + 1).padStart(3, "0")}`);
 

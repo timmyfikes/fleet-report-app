@@ -569,16 +569,24 @@ const buildPrintableHtml = (audit) => {
       const photoHtml = sectionState.photos?.length
         ? `
           <div class="photos">
-            ${sectionState.photos
-              .map(
-                (photo) => `
-                  <figure>
-                    <img src="${photo.src}" alt="${escapeHtml(photo.name)}">
-                    <figcaption>${escapeHtml(photo.name)}</figcaption>
-                  </figure>
-                `
-              )
-              .join("")}
+            ${Array.from({ length: Math.ceil(sectionState.photos.length / 2) }, (_, rowIndex) => {
+              const rowPhotos = sectionState.photos.slice(rowIndex * 2, rowIndex * 2 + 2);
+              return `
+                <div class="photo-row">
+                  ${rowPhotos
+                    .map(
+                      (photo) => `
+                        <figure class="photo-card">
+                          <img src="${escapeHtml(photo.src)}" alt="${escapeHtml(photo.name)}">
+                          <figcaption>${escapeHtml(photo.name)}</figcaption>
+                        </figure>
+                      `
+                    )
+                    .join("")}
+                  ${rowPhotos.length === 1 ? `<div class="photo-card photo-placeholder" aria-hidden="true"></div>` : ""}
+                </div>
+              `;
+            }).join("")}
           </div>
         `
         : "";
@@ -704,7 +712,7 @@ const buildPrintableHtml = (audit) => {
             page-break-inside: avoid;
             margin: 14px 0 0;
           }
-          .audit-section.force-page-break {
+          .force-page-break {
             break-before: page;
             page-break-before: always;
           }
@@ -767,29 +775,59 @@ const buildPrintableHtml = (audit) => {
             text-transform: uppercase;
           }
           .photos {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 8px;
+            display: block;
             margin-top: 8px;
+            break-inside: auto;
+            page-break-inside: auto;
+          }
+          .photo-row {
+            display: table;
+            table-layout: fixed;
+            width: 100%;
+            margin: 8px 0 0;
             break-inside: avoid;
+            break-inside: avoid-page;
             page-break-inside: avoid;
           }
-          figure {
+          .photo-row:first-child {
+            margin-top: 0;
+          }
+          .photo-card {
+            display: table-cell;
+            width: 50%;
             margin: 0;
+            padding: 0 4px;
+            vertical-align: top;
             break-inside: avoid;
+            break-inside: avoid-page;
             page-break-inside: avoid;
           }
-          img {
+          .photo-card:first-child {
+            padding-left: 0;
+          }
+          .photo-card:last-child {
+            padding-right: 0;
+          }
+          .photo-placeholder {
+            visibility: hidden;
+          }
+          .photo-card img {
             display: block;
             width: 100%;
             max-height: 260px;
             object-fit: contain;
             border: 1px solid #cbd5e1;
+            break-inside: avoid;
+            break-inside: avoid-page;
+            page-break-inside: avoid;
           }
-          figcaption {
+          .photo-card figcaption {
             color: #475569;
             font-size: 8px;
             margin-top: 3px;
+            break-inside: avoid;
+            break-inside: avoid-page;
+            page-break-inside: avoid;
           }
           .notes {
             border: 1px solid #cbd5e1;
@@ -821,26 +859,36 @@ const buildPrintableHtml = (audit) => {
         <script>
           const preparePrintLayout = () => {
             const pageHeight = 10.1 * 96;
+            const pageBreakBuffer = 48;
             const bodyTop = document.body.getBoundingClientRect().top;
-            const sections = Array.from(document.querySelectorAll(".audit-section"));
+            const keepTogether = (selector) => {
+              Array.from(document.querySelectorAll(selector)).forEach((element) => {
+                const rect = element.getBoundingClientRect();
+                if (rect.height >= pageHeight) return;
 
-            sections.forEach((section) => section.classList.remove("force-page-break"));
-            sections.forEach((section) => {
-              const rect = section.getBoundingClientRect();
-              if (rect.height >= pageHeight) return;
+                const elementTop = rect.top - bodyTop;
+                const usedOnPage = ((elementTop % pageHeight) + pageHeight) % pageHeight;
+                const remainingOnPage = pageHeight - usedOnPage;
 
-              const sectionTop = rect.top - bodyTop;
-              const usedOnPage = sectionTop % pageHeight;
-              const remainingOnPage = pageHeight - usedOnPage;
+                if (usedOnPage > 0 && remainingOnPage < rect.height + pageBreakBuffer) {
+                  element.classList.add("force-page-break");
+                }
+              });
+            };
 
-              if (usedOnPage > 0 && remainingOnPage < rect.height) {
-                section.classList.add("force-page-break");
-              }
+            Array.from(document.querySelectorAll(".force-page-break")).forEach((element) => {
+              element.classList.remove("force-page-break");
             });
+
+            keepTogether(".audit-section");
+            keepTogether(".photo-row");
           };
           const printReport = () => window.setTimeout(() => {
             preparePrintLayout();
-            window.print();
+            window.setTimeout(() => {
+              preparePrintLayout();
+              window.print();
+            }, 50);
           }, 300);
           const images = Array.from(document.images);
           if (!images.length) {

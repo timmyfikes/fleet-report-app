@@ -30,6 +30,7 @@ import {
   fleetTabs,
   PUMP_OPTIONS,
   TRACTOR_OPTIONS,
+  TRUCK_OPTIONS,
   COMMAND_CENTER_OPTIONS,
   supabase,
   isRealTruckUnit,
@@ -1090,8 +1091,7 @@ ${issueLines}`;
                   <h3>🛻 Day Shift Truck(s)</h3>
                   {form.dayTrucks.map((v, i) => {
                     const num = (v || "").replace("C-", "").replace("OTHER", "");
-                    const options = ["416","427","430","431","464","496","706","710","715","721","722","723","724","725","727","728","745","746","747","749"];
-                    const selected = options.includes(num) ? num : (v === "OTHER" || (!options.includes(num) && num) ? "Other" : "");
+                    const selected = TRUCK_OPTIONS.includes(num) ? num : (v === "OTHER" || (!TRUCK_OPTIONS.includes(num) && num) ? "Other" : "");
                     return (
                       <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8 }}>
                         <div style={{ ...input, width: 80, display: "flex", alignItems: "center", justifyContent: "center", background: "#f1f5f9", fontWeight: 700 }}>C-</div>
@@ -1106,7 +1106,7 @@ ${issueLines}`;
                           }}
                         >
                           <option value="">Select Truck</option>
-                          {options.map((o) => <option key={o} value={o}>{o}</option>)}
+                          {TRUCK_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
                           <option value="Other">Other</option>
                         </select>
                         {selected === "Other" ? (
@@ -1135,8 +1135,7 @@ ${issueLines}`;
                   <h3>🚚 Night Shift Truck(s)</h3>
                   {form.nightTrucks.map((v, i) => {
                     const num = (v || "").replace("C-", "").replace("OTHER", "");
-                    const options = ["416","427","430","431","464","496","706","710","715","721","722","723","724","725","727","728","745","746","747","749"];
-                    const selected = options.includes(num) ? num : (v === "OTHER" || (!options.includes(num) && num) ? "Other" : "");
+                    const selected = TRUCK_OPTIONS.includes(num) ? num : (v === "OTHER" || (!TRUCK_OPTIONS.includes(num) && num) ? "Other" : "");
                     return (
                       <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8 }}>
                         <div style={{ ...input, width: 80, display: "flex", alignItems: "center", justifyContent: "center", background: "#f1f5f9", fontWeight: 700 }}>C-</div>
@@ -1151,7 +1150,7 @@ ${issueLines}`;
                           }}
                         >
                           <option value="">Select Truck</option>
-                          {options.map((o) => <option key={o} value={o}>{o}</option>)}
+                          {TRUCK_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
                           <option value="Other">Other</option>
                         </select>
                         {selected === "Other" ? (
@@ -1376,7 +1375,7 @@ style={selectInput}
               <option value="">Select Unit</option>
               <option value="WS-BOM-01">WS-BOM-01</option>
               <option value="WS-BOM-02">WS-BOM-02</option>
-              {Array.from({ length: 13 }, (_, i) => {
+              {Array.from({ length: 14 }, (_, i) => {
                 const num = String(i + 3).padStart(2, "0");
                 return `WS-HBO-${num}`;
               }).map((opt) => (

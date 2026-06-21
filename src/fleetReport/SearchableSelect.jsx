@@ -1,9 +1,10 @@
-import React, { memo, useMemo, useState } from "react";
+import React, { memo, useMemo, useRef, useState } from "react";
 import { input } from "./config";
 
 export const SearchableSelect = memo(function SearchableSelect({ value, onChange, options, placeholder, enableOther = false }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isCustomEntry, setIsCustomEntry] = useState(false);
+  const inputRef = useRef(null);
   const isTypingCustom = isCustomEntry && !options.includes(value);
 
   const filteredOptions = useMemo(() => {
@@ -15,6 +16,7 @@ export const SearchableSelect = memo(function SearchableSelect({ value, onChange
   return (
     <div style={{ position: "relative", marginBottom: 8 }}>
       <input
+        ref={inputRef}
         style={{ ...input, paddingRight: 36, cursor: isTypingCustom ? "text" : "pointer" }}
         placeholder={placeholder}
         value={value}
@@ -88,6 +90,10 @@ export const SearchableSelect = memo(function SearchableSelect({ value, onChange
                 setIsCustomEntry(true);
                 onChange("");
                 setIsOpen(false);
+                if (inputRef.current) {
+                  inputRef.current.readOnly = false;
+                  inputRef.current.focus({ preventScroll: true });
+                }
               }}
               style={{
                 display: "block",
