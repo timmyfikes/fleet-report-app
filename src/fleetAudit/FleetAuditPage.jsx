@@ -956,7 +956,8 @@ export function FleetAuditPage({ isMobile, onBack, wsEnergyLogo }) {
     setAuditsLoading(true);
     const { data, error } = await supabase
       .from(AUDITS_TABLE)
-      .select("id, audit_date, fleet, customer, auditor, audit_data, created_at")
+      .select("id, audit_date, fleet, customer, auditor, audit_data, created_at, updated_at")
+      .order("updated_at", { ascending: false })
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -1260,8 +1261,14 @@ export function FleetAuditPage({ isMobile, onBack, wsEnergyLogo }) {
 
     setIsSavingAudit(true);
     const normalizedAudit = normalizeAudit(audit);
+    if (!normalizedAudit.date || !normalizedAudit.fleet) {
+      setIsSavingAudit(false);
+      showMessage("Audit date and fleet are required", "error");
+      return;
+    }
+
     const payload = {
-      audit_date: normalizedAudit.date || null,
+      audit_date: normalizedAudit.date,
       fleet: normalizedAudit.fleet,
       customer: normalizedAudit.customer,
       auditor: normalizedAudit.auditor,
@@ -1270,7 +1277,28 @@ export function FleetAuditPage({ isMobile, onBack, wsEnergyLogo }) {
       audit_data: normalizedAudit,
     };
 
-    const { error } = await supabase.from(AUDITS_TABLE).insert(payload);
+    const { data: matchingAudits, error: matchError } = await supabase
+      .from(AUDITS_TABLE)
+      .select("id, updated_at, created_at")
+      .eq("audit_date", payload.audit_date)
+      .eq("fleet", payload.fleet)
+      .order("updated_at", { ascending: false })
+      .order("created_at", { ascending: false });
+
+    if (matchError) {
+      console.error(matchError);
+      setIsSavingAudit(false);
+      showMessage("Audit save failed", "error");
+      return;
+    }
+
+    const existingAudit = matchingAudits?.[0];
+    const duplicateIds = (matchingAudits || []).slice(1).map((savedAudit) => savedAudit.id).filter(Boolean);
+    const saveRequest = existingAudit
+      ? supabase.from(AUDITS_TABLE).update(payload).eq("id", existingAudit.id)
+      : supabase.from(AUDITS_TABLE).insert(payload);
+
+    const { error } = await saveRequest;
 
     if (error) {
       console.error(error);
@@ -1279,9 +1307,20 @@ export function FleetAuditPage({ isMobile, onBack, wsEnergyLogo }) {
       return;
     }
 
+    if (duplicateIds.length) {
+      const { error: duplicateDeleteError } = await supabase
+        .from(AUDITS_TABLE)
+        .delete()
+        .in("id", duplicateIds);
+
+      if (duplicateDeleteError) {
+        console.error(duplicateDeleteError);
+      }
+    }
+
     await fetchSavedAudits();
     setIsSavingAudit(false);
-    showMessage("Completed audit saved");
+    showMessage(existingAudit ? "Completed audit updated" : "Completed audit saved");
   };
 
   const loadSavedAudit = (savedAudit) => {
