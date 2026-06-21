@@ -13,6 +13,36 @@ export const SearchableSelect = memo(function SearchableSelect({ value, onChange
     return options.filter((option) => option.toLowerCase().includes(q));
   }, [isTypingCustom, value, options]);
 
+  const focusCustomInput = () => {
+    const field = inputRef.current;
+    if (!field) return;
+
+    field.readOnly = false;
+    field.removeAttribute("readonly");
+    field.blur();
+
+    try {
+      field.focus({ preventScroll: true });
+    } catch {
+      field.focus();
+    }
+
+    try {
+      const cursorPosition = field.value.length;
+      field.setSelectionRange(cursorPosition, cursorPosition);
+    } catch {
+      // Some mobile browsers do not allow selection changes on every input type.
+    }
+  };
+
+  const chooseOther = (event) => {
+    event.preventDefault();
+    setIsCustomEntry(true);
+    onChange("");
+    setIsOpen(false);
+    focusCustomInput();
+  };
+
   return (
     <div style={{ position: "relative", marginBottom: 8 }}>
       <input
@@ -85,16 +115,9 @@ export const SearchableSelect = memo(function SearchableSelect({ value, onChange
           {enableOther ? (
             <button
               type="button"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => {
-                setIsCustomEntry(true);
-                onChange("");
-                setIsOpen(false);
-                if (inputRef.current) {
-                  inputRef.current.readOnly = false;
-                  inputRef.current.focus({ preventScroll: true });
-                }
-              }}
+              onMouseDown={chooseOther}
+              onTouchEnd={chooseOther}
+              onClick={chooseOther}
               style={{
                 display: "block",
                 width: "100%",
