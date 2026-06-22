@@ -1332,7 +1332,7 @@ style={selectInput}
               onChange={(e) => updateNested("misc", "bleedOffSkid", e.target.value)}
             >
               <option value="">Select Skid</option>
-              {Array.from({ length: 15 }, (_, i) => {
+              {Array.from({ length: 16 }, (_, i) => {
                 const num = String(i + 1).padStart(2, "0");
                 return `WS-BOS-${num}`;
               }).map((opt) => (
