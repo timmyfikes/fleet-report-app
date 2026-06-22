@@ -224,22 +224,6 @@ const trailingAuditSections = [
   },
 ];
 
-const getReadinessSummarySection = (equipment) => ({
-  id: "overall-readiness-summary",
-  title: "Overall Readiness Summary",
-  accent: "#2563eb",
-  items: [
-    "Safety Ready",
-    "Personnel Ready",
-    ...equipment.trucks.map((_, index) => `Truck ${index + 1} Ready`),
-    ...equipment.tractors.map((_, index) => `Tractor ${index + 1} Ready`),
-    ...equipment.pumps.map((_, index) => `Pump ${index + 1} Ready`),
-    "Command Center Ready",
-    "Iron Trailer Ready",
-    "Operations Ready",
-  ],
-});
-
 const getAuditItemText = (item) => (typeof item === "string" ? item : item.text);
 const getAuditItemGroup = (item) => (typeof item === "string" ? "" : item.group || "");
 const getAuditItemLabel = (item) => {
@@ -333,7 +317,6 @@ const getAuditSections = (audit) => {
       unitNumber: normalizeText(audit?.sections?.[section.id]?.unitNumber),
     })),
     ...trailingAuditSections,
-    getReadinessSummarySection(equipment),
   ];
 };
 
@@ -609,7 +592,41 @@ const getSectionStats = (items) => {
   const needsAttention = items.filter((item) => item.status === "Needs Attention").length;
   const pass = items.filter((item) => item.status === "Pass").length;
   const notApplicable = items.filter((item) => item.status === "N/A").length;
-  return { answered, needsAttention, pass, notApplicable, total: items.length };
+  const total = items.length;
+  const open = total - answered;
+  const applicable = total - notApplicable;
+  const score = applicable ? Math.round((pass / applicable) * 100) : 100;
+  return { answered, needsAttention, pass, notApplicable, open, applicable, score, total };
+};
+
+const getScoreTone = (score) => {
+  if (score >= 90) return { label: "Ready", color: "#166534", background: "#dcfce7", border: "#86efac" };
+  if (score >= 75) return { label: "Needs Follow-up", color: "#854d0e", background: "#fef9c3", border: "#fde047" };
+  return { label: "Not Ready", color: "#991b1b", background: "#fee2e2", border: "#fca5a5" };
+};
+
+const getAuditScore = (sectionStats) => {
+  const totals = Object.values(sectionStats).reduce(
+    (acc, stats) => ({
+      total: acc.total + stats.total,
+      answered: acc.answered + stats.answered,
+      pass: acc.pass + stats.pass,
+      needsAttention: acc.needsAttention + stats.needsAttention,
+      notApplicable: acc.notApplicable + stats.notApplicable,
+      open: acc.open + stats.open,
+      applicable: acc.applicable + stats.applicable,
+    }),
+    { total: 0, answered: 0, pass: 0, needsAttention: 0, notApplicable: 0, open: 0, applicable: 0 }
+  );
+  const score = totals.applicable ? Math.round((totals.pass / totals.applicable) * 100) : 100;
+  const completion = totals.total ? Math.round((totals.answered / totals.total) * 100) : 0;
+
+  return {
+    ...totals,
+    score,
+    completion,
+    tone: getScoreTone(score),
+  };
 };
 
 const getStatusTone = (status) =>
@@ -743,6 +760,31 @@ const docxDataUrlToBytes = (src) => {
   return { bytes, extension, mime };
 };
 
+const getDocxImageExtension = (mime) => {
+  const normalizedMime = String(mime || "").toLowerCase();
+  if (normalizedMime.includes("png")) return "png";
+  if (normalizedMime.includes("jpeg") || normalizedMime.includes("jpg")) return "jpg";
+  return "";
+};
+
+const docxImageToBytes = async (src) => {
+  const dataUrlBytes = docxDataUrlToBytes(src);
+  if (dataUrlBytes) return dataUrlBytes;
+
+  const response = await fetch(src);
+  if (!response.ok) return null;
+
+  const mime = response.headers.get("content-type") || "";
+  const extension = getDocxImageExtension(mime || src);
+  if (!extension) return null;
+
+  return {
+    bytes: new Uint8Array(await response.arrayBuffer()),
+    extension,
+    mime,
+  };
+};
+
 const docxImageDimensions = (src) =>
   new Promise((resolve) => {
     const image = new Image();
@@ -766,9 +808,21 @@ const docxImageSize = (width, height) => {
   };
 };
 
-const docxDrawing = ({ relationshipId, name, cx, cy, id }) => `
+const docxLogoImageSize = (width, height) => {
+  const maxWidth = Math.round(1.85 * EMUS_PER_INCH);
+  const maxHeight = Math.round(0.75 * EMUS_PER_INCH);
+  const originalWidth = Math.max(1, width) * 9525;
+  const originalHeight = Math.max(1, height) * 9525;
+  const scale = Math.min(maxWidth / originalWidth, maxHeight / originalHeight, 1);
+  return {
+    cx: Math.max(1, Math.round(originalWidth * scale)),
+    cy: Math.max(1, Math.round(originalHeight * scale)),
+  };
+};
+
+const docxDrawing = ({ relationshipId, name, cx, cy, id, align = "", spacingAfter = 40 }) => `
   <w:p>
-    <w:pPr><w:spacing w:after="40"/></w:pPr>
+    <w:pPr>${align ? `<w:jc w:val="${align}"/>` : ""}<w:spacing w:after="${spacingAfter}"/></w:pPr>
     <w:r>
       <w:drawing>
         <wp:inline distT="0" distB="0" distL="0" distR="0">
@@ -914,14 +968,57 @@ const getAuditDocxFileName = (audit) => {
   return `pumpdown-readiness-audit-${fleet}-${date}.docx`.replace(/[^a-z0-9._-]+/gi, "-");
 };
 
-const buildAuditDocxBlob = async (audit) => {
+const buildAuditDocxBlob = async (audit, logoSrc = "") => {
   const { auditSections, auditDateLabel, metaRows, actionRows } = getAuditDocumentData(audit);
+  const auditScore = getAuditScore(
+    auditSections.reduce((acc, section) => {
+      acc[section.id] = getSectionStats(getSectionState(section, audit.sections).items);
+      return acc;
+    }, {})
+  );
   const mediaFiles = [];
   const imageRelationships = [];
   let imageIndex = 1;
+
+  const addImage = async (src, name, getSize = docxImageSize) => {
+    const data = await docxImageToBytes(src);
+    if (!data) return null;
+    const dimensions = await docxImageDimensions(src);
+    const size = getSize(dimensions.width, dimensions.height);
+    const relationshipId = `rId${imageIndex}`;
+    mediaFiles.push({
+      path: `word/media/image${imageIndex}.${data.extension}`,
+      data: data.bytes,
+    });
+    imageRelationships.push({
+      id: relationshipId,
+      target: `media/image${imageIndex}.${data.extension}`,
+    });
+    imageIndex += 1;
+    return { relationshipId, name: name || `Image ${imageIndex}`, ...size, id: imageIndex + 1000 };
+  };
+
+  const logoImage = logoSrc ? await addImage(logoSrc, "WS Energy Services logo", docxLogoImageSize) : null;
   const documentParts = [
-    docxParagraph("PUMPDOWN FLEET READINESS AUDIT", { bold: true, size: 30, spacingAfter: 80 }),
-    docxParagraph(`Audit Date ${auditDateLabel}`, { size: 18, spacingAfter: 80 }),
+    docxTable(
+      [
+        {
+          cells: [
+            {
+              content: [
+                docxParagraph("PUMPDOWN FLEET READINESS AUDIT", { bold: true, size: 30, spacingAfter: 60 }),
+                docxParagraph(`Audit Date ${auditDateLabel}`, { size: 18, spacingAfter: 20 }),
+              ],
+            },
+            {
+              content: logoImage ? docxDrawing({ ...logoImage, align: "right", spacingAfter: 0 }) : docxParagraph(""),
+            },
+          ],
+        },
+      ],
+      [7600, 3344],
+      { border: "none" }
+    ),
     docxTable(
       [
         {
@@ -945,25 +1042,39 @@ const buildAuditDocxBlob = async (audit) => {
       ],
       [3648, 3648, 3648]
     ),
+    docxParagraph("Automatic Readiness Score", { bold: true, size: 22, keepNext: true, spacingAfter: 60 }),
+    docxTable(
+      [
+        {
+          cells: [
+            {
+              content: [
+                docxParagraph(`${auditScore.score}%`, { bold: true, size: 28, color: auditScore.tone.color, spacingAfter: 20 }),
+                docxParagraph(auditScore.tone.label, { bold: true, size: 16, color: auditScore.tone.color, spacingAfter: 20 }),
+              ],
+              fill: auditScore.tone.background,
+            },
+            {
+              content: docxParagraph(`${auditScore.pass} pass / ${auditScore.applicable} applicable`, { size: 16, spacingAfter: 20 }),
+              fill: "F8FAFC",
+            },
+            {
+              content: docxParagraph(`${auditScore.needsAttention} attention / ${auditScore.open} open`, { size: 16, spacingAfter: 20 }),
+              fill: "F8FAFC",
+            },
+            {
+              content: docxParagraph(`${auditScore.completion}% complete`, { size: 16, spacingAfter: 20 }),
+              fill: "F8FAFC",
+            },
+          ],
+        },
+      ],
+      [2736, 2736, 2736, 2736]
+    ),
   ];
 
   const addPhoto = async (photo) => {
-    const data = docxDataUrlToBytes(photo.src);
-    if (!data) return null;
-    const dimensions = await docxImageDimensions(photo.src);
-    const size = docxImageSize(dimensions.width, dimensions.height);
-    const relationshipId = `rId${imageIndex}`;
-    const name = photo.name || `Photo ${imageIndex}`;
-    mediaFiles.push({
-      path: `word/media/image${imageIndex}.${data.extension}`,
-      data: data.bytes,
-    });
-    imageRelationships.push({
-      id: relationshipId,
-      target: `media/image${imageIndex}.${data.extension}`,
-    });
-    imageIndex += 1;
-    return { relationshipId, name, ...size, id: imageIndex + 1000 };
+    return addImage(photo.src, photo.name || `Photo ${imageIndex}`, docxImageSize);
   };
 
   if (actionRows.length) {
@@ -1210,6 +1321,7 @@ export function FleetAuditPage({ isMobile, onBack, wsEnergyLogo }) {
       }, {}),
     [audit.sections, auditSections]
   );
+  const auditScore = useMemo(() => getAuditScore(sectionStats), [sectionStats]);
 
   const activeSection = auditSections.find((section) => section.id === activeSectionId) || auditSections[0];
   const activeSectionState = getSectionState(activeSection, audit.sections);
@@ -1435,7 +1547,7 @@ export function FleetAuditPage({ isMobile, onBack, wsEnergyLogo }) {
     setIsBuildingAuditDocx(true);
     try {
       const normalizedAudit = normalizeAudit(auditToDownload);
-      const blob = await buildAuditDocxBlob(normalizedAudit);
+      const blob = await buildAuditDocxBlob(normalizedAudit, wsEnergyLogo);
       downloadDocxBlob(blob, getAuditDocxFileName(normalizedAudit));
       showMessage("Audit DOCX downloaded");
     } catch (error) {
@@ -1660,6 +1772,28 @@ export function FleetAuditPage({ isMobile, onBack, wsEnergyLogo }) {
             <h1 style={{ margin: 0, fontSize: isMobile ? 23 : 32, lineHeight: 1.15, color: "#111827" }}>
               Pumpdown Fleet Readiness Audit
             </h1>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "1.2fr repeat(3, 1fr)", gap: 8, marginTop: 14 }}>
+            <div style={{ border: `1px solid ${auditScore.tone.border}`, borderRadius: 8, background: auditScore.tone.background, padding: 10 }}>
+              <div style={{ color: auditScore.tone.color, fontSize: 11, fontWeight: 900, textTransform: "uppercase" }}>Readiness Score</div>
+              <div style={{ color: auditScore.tone.color, fontSize: isMobile ? 24 : 30, fontWeight: 900, lineHeight: 1 }}>
+                {auditScore.score}%
+              </div>
+              <div style={{ color: auditScore.tone.color, fontSize: 12, fontWeight: 800, marginTop: 3 }}>{auditScore.tone.label}</div>
+            </div>
+            {[
+              ["Pass", auditScore.pass],
+              ["Attention", auditScore.needsAttention],
+              ["Open", auditScore.open],
+            ].map(([title, value]) => (
+              <div key={title} style={{ border: "1px solid #dbe4ee", borderRadius: 8, background: "#f8fafc", padding: 10 }}>
+                <div style={{ color: "#64748b", fontSize: 11, fontWeight: 900, textTransform: "uppercase" }}>{title}</div>
+                <div style={{ color: "#111827", fontSize: isMobile ? 20 : 24, fontWeight: 900, lineHeight: 1.1 }}>{value}</div>
+                <div style={{ color: "#64748b", fontSize: 12, fontWeight: 700, marginTop: 3 }}>
+                  {title === "Pass" ? `${auditScore.applicable} applicable` : `${auditScore.completion}% complete`}
+                </div>
+              </div>
+            ))}
           </div>
         </header>
 
@@ -2058,6 +2192,15 @@ export function FleetAuditPage({ isMobile, onBack, wsEnergyLogo }) {
 
           <aside style={{ ...card, borderRadius: 8, padding: isMobile ? 12 : 14, position: isMobile ? "static" : "sticky", top: 92 }}>
             <h2 style={{ margin: "0 0 10px", color: "#111827", fontSize: 18 }}>Audit Summary</h2>
+            <div style={{ border: `1px solid ${auditScore.tone.border}`, borderRadius: 8, background: auditScore.tone.background, padding: 10, marginBottom: 10 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline" }}>
+                <span style={{ color: auditScore.tone.color, fontSize: 13, fontWeight: 900 }}>Score</span>
+                <span style={{ color: auditScore.tone.color, fontSize: 24, fontWeight: 900 }}>{auditScore.score}%</span>
+              </div>
+              <div style={{ color: auditScore.tone.color, fontSize: 12, fontWeight: 800 }}>
+                {auditScore.tone.label} • {auditScore.pass}/{auditScore.applicable} pass • {auditScore.open} open
+              </div>
+            </div>
             <div style={{ display: "grid", gap: 8 }}>
               {auditSections.map((section) => {
                 const stats = sectionStats[section.id];
