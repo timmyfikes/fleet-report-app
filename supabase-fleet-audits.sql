@@ -11,6 +11,39 @@ create table if not exists public.fleet_audits (
   updated_at timestamptz not null default now()
 );
 
+alter table public.fleet_audits
+  add column if not exists status text,
+  add column if not exists completed_at timestamptz,
+  add column if not exists last_autosaved_at timestamptz;
+
+update public.fleet_audits
+set
+  status = 'completed',
+  completed_at = coalesce(completed_at, updated_at, created_at),
+  last_autosaved_at = coalesce(last_autosaved_at, updated_at, created_at)
+where status is null;
+
+alter table public.fleet_audits
+  alter column status set default 'draft',
+  alter column status set not null;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'fleet_audits_status_check'
+      and conrelid = 'public.fleet_audits'::regclass
+  ) then
+    alter table public.fleet_audits
+      add constraint fleet_audits_status_check
+      check (status in ('draft', 'completed'));
+  end if;
+end $$;
+
+create index if not exists fleet_audits_status_updated_at_idx
+  on public.fleet_audits (status, updated_at desc);
+
 alter table public.fleet_audits enable row level security;
 
 create or replace function public.set_fleet_audits_updated_at()
@@ -136,4 +169,74 @@ begin
 exception
   when duplicate_object then
     null;
+end $$;
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'fleet-audit-photos',
+  'fleet-audit-photos',
+  true,
+  10485760,
+  array['image/jpeg', 'image/png', 'image/webp']
+)
+on conflict (id) do update
+set
+  public = excluded.public,
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname = 'storage'
+      and tablename = 'objects'
+      and policyname = 'Allow public fleet audit photo reads'
+  ) then
+    create policy "Allow public fleet audit photo reads"
+      on storage.objects
+      for select
+      using (bucket_id = 'fleet-audit-photos');
+  end if;
+
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname = 'storage'
+      and tablename = 'objects'
+      and policyname = 'Allow public fleet audit photo writes'
+  ) then
+    create policy "Allow public fleet audit photo writes"
+      on storage.objects
+      for insert
+      with check (bucket_id = 'fleet-audit-photos');
+  end if;
+
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname = 'storage'
+      and tablename = 'objects'
+      and policyname = 'Allow public fleet audit photo updates'
+  ) then
+    create policy "Allow public fleet audit photo updates"
+      on storage.objects
+      for update
+      using (bucket_id = 'fleet-audit-photos')
+      with check (bucket_id = 'fleet-audit-photos');
+  end if;
+
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname = 'storage'
+      and tablename = 'objects'
+      and policyname = 'Allow public fleet audit photo deletes'
+  ) then
+    create policy "Allow public fleet audit photo deletes"
+      on storage.objects
+      for delete
+      using (bucket_id = 'fleet-audit-photos');
+  end if;
 end $$;
