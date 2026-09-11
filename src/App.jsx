@@ -47,6 +47,7 @@ import { HelpModal } from "./fleetReport/components/HelpModal";
 import { PumpdownTicketsPage } from "./pumpdown/PumpdownTicketsPage";
 import { PumpdownSchedulePage, TorqueTestSchedulePage } from "./pumpdown/PumpdownSchedulePage";
 import { FleetAuditPage } from "./fleetAudit/FleetAuditPage";
+import { CalculatorsPage } from "./calculators/CalculatorsPage";
 
 const getInitialPage = () => {
   if (typeof window === "undefined") return "fleet";
@@ -54,6 +55,7 @@ const getInitialPage = () => {
   if (window.location.hash === "#/pumpdown-schedule") return "pumpdown-schedule";
   if (window.location.hash === "#/torque-test-schedule") return "torque-test-schedule";
   if (window.location.hash === "#/fleet-audit") return "fleet-audit";
+  if (window.location.hash === "#/calculators") return "calculators";
   return "fleet";
 };
 
@@ -83,6 +85,7 @@ export default function FleetReportApp() {
       "pumpdown-schedule": "#/pumpdown-schedule",
       "torque-test-schedule": "#/torque-test-schedule",
       "fleet-audit": "#/fleet-audit",
+      calculators: "#/calculators",
     };
     const nextHash = pageHashes[page] || "#/";
     if (window.location.hash !== nextHash) {
@@ -900,6 +903,16 @@ ${issueLines}`;
     );
   }
 
+  if (activePage === "calculators") {
+    return (
+      <CalculatorsPage
+        isMobile={isMobile}
+        onBack={() => navigateToPage("fleet")}
+        wsEnergyLogo={wsEnergyLogo}
+      />
+    );
+  }
+
   return (
     <div style={{ background: "linear-gradient(180deg, #f3f7fc 0%, #f8fafc 45%, #f8fafc 100%)", minHeight: "100vh", padding: isMobile ? 12 : 18, colorScheme: "light", color: "#111827" }}>
       <div style={{ maxWidth: 1140, margin: "0 auto" }}>
@@ -914,6 +927,7 @@ ${issueLines}`;
           onOpenPumpdownSchedule={() => navigateToPage("pumpdown-schedule")}
           onOpenTorqueTestSchedule={() => navigateToPage("torque-test-schedule")}
           onOpenFleetAudit={() => navigateToPage("fleet-audit")}
+          onOpenCalculators={() => navigateToPage("calculators")}
         />
 
         <div style={{

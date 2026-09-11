@@ -1,7 +1,7 @@
 import React from "react";
 import { card, input } from "../config";
 
-export function HeaderCard({ isMobile, activeFleet, fleetTabs, setActiveFleet, setShowHelp, wsEnergyLogo, onOpenPumpdown, onOpenPumpdownSchedule, onOpenTorqueTestSchedule, onOpenFleetAudit }) {
+export function HeaderCard({ isMobile, activeFleet, fleetTabs, setActiveFleet, setShowHelp, wsEnergyLogo, onOpenPumpdown, onOpenPumpdownSchedule, onOpenTorqueTestSchedule, onOpenFleetAudit, onOpenCalculators }) {
   return (
     <div style={{ ...card, marginBottom: 16, position: "relative" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
@@ -84,6 +84,26 @@ export function HeaderCard({ isMobile, activeFleet, fleetTabs, setActiveFleet, s
               }}
             >
               Fleet Audit
+            </button>
+          ) : null}
+          {onOpenCalculators ? (
+            <button
+              type="button"
+              onClick={onOpenCalculators}
+              style={{
+                ...input,
+                width: "auto",
+                padding: "8px 12px",
+                background: "#f5f3ff",
+                border: "1px solid #c4b5fd",
+                color: "#6d28d9",
+                WebkitTextFillColor: "#6d28d9",
+                fontWeight: 700,
+                fontSize: 13,
+                cursor: "pointer",
+              }}
+            >
+              Stroke Rate Calculator
             </button>
           ) : null}
         </div>
