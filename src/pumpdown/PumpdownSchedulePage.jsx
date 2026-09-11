@@ -13,11 +13,7 @@ import {
 } from "../fleetReport/config";
 
 const PUMPDOWN_SCHEDULE_PASSWORD = "1775";
-const STORAGE_KEY = "pumpdownScheduleDraft";
-const BACKUP_STORAGE_KEY = "pumpdownScheduleDraftBackup";
-const ACCESS_KEY = "pumpdownScheduleUnlocked";
 const SHARED_SCHEDULE_TABLE = "pumpdown_schedule_state";
-const SHARED_SCHEDULE_ID = "current";
 const SHARED_SAVE_DELAY_MS = 700;
 const DEFAULT_ANCHOR_DATE = "2026-01-07";
 const CYCLE_DAYS = 21;
@@ -115,6 +111,47 @@ const shiftTone = {
   C: { background: "#f0fdf4", border: "#86efac", color: "#166534" },
 };
 
+const torqueTestShiftTone = {
+  A: { background: "#fef9c3", border: "#facc15", color: "#854d0e" },
+  B: { background: "#dbeafe", border: "#60a5fa", color: "#1d4ed8" },
+  C: { background: "#fce7f3", border: "#f9a8d4", color: "#be185d" },
+};
+
+const scheduleConfigs = {
+  pumpdown: {
+    title: "Pumpdown Schedule",
+    heading: "Pumpdown 14/7 Schedule",
+    pdfTitle: "Pumpdown",
+    filePrefix: "pumpdown",
+    storageKey: "pumpdownScheduleDraft",
+    backupStorageKey: "pumpdownScheduleDraftBackup",
+    accessKey: "pumpdownScheduleUnlocked",
+    sharedId: "current",
+    cycleDays: CYCLE_DAYS,
+    offDays: 7,
+    rotationDays: ROTATION_DAYS,
+    shiftTones: shiftTone,
+    hideFleets: false,
+  },
+  torqueTest: {
+    title: "Torque & Test Schedule",
+    heading: "Torque & Test 20/10 Schedule",
+    pdfTitle: "Torque & Test",
+    filePrefix: "torque-test",
+    storageKey: "torqueTestScheduleDraft",
+    backupStorageKey: "torqueTestScheduleDraftBackup",
+    accessKey: "torqueTestScheduleUnlocked",
+    sharedId: "torque-test-current",
+    cycleDays: 30,
+    offDays: 10,
+    rotationDays: 10,
+    shiftTones: torqueTestShiftTone,
+    hideFleets: true,
+    unitLabel: "Torque & Test",
+    defaultOffStartDates: { A: "2026-09-20", B: "2026-08-31", C: "2026-09-10" },
+  },
+};
+
 const makeFleetId = () => `fleet-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 const makePtoId = () => `pto-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
@@ -164,25 +201,31 @@ const positiveMod = (value, divisor) => ((value % divisor) + divisor) % divisor;
 const getDayOffset = (date, anchorDate) =>
   Math.round((dateFromInput(dateToInput(date)).getTime() - dateFromInput(anchorDate).getTime()) / DAY_MS);
 
-const getShiftStatusForDate = (date, shift, anchorDate) => {
+const getShiftStatusForDate = (date, shift, schedule, config) => {
+  if (config.hideFleets) {
+    const offStartDate = schedule.offStartDates?.[shift] || config.defaultOffStartDates[shift];
+    const cycleDay = positiveMod(getDayOffset(date, offStartDate), config.cycleDays);
+    return cycleDay < config.offDays ? "OFF" : "ON";
+  }
+  const anchorDate = schedule.anchorDate;
   const cycleDay = positiveMod(getDayOffset(date, anchorDate), CYCLE_DAYS);
   if (shift === "A") return cycleDay <= 6 ? "OFF" : "ON";
   if (shift === "B") return cycleDay >= 7 && cycleDay <= 13 ? "OFF" : "ON";
   return cycleDay >= 14 ? "OFF" : "ON";
 };
 
-const getNextChangeDate = (shift, fromDate, anchorDate) => {
-  const currentStatus = getShiftStatusForDate(fromDate, shift, anchorDate);
-  for (let i = 1; i <= CYCLE_DAYS; i += 1) {
+const getNextChangeDate = (shift, fromDate, schedule, config) => {
+  const currentStatus = getShiftStatusForDate(fromDate, shift, schedule, config);
+  for (let i = 1; i <= config.cycleDays; i += 1) {
     const candidate = addDays(fromDate, i);
-    if (getShiftStatusForDate(candidate, shift, anchorDate) !== currentStatus) return candidate;
+    if (getShiftStatusForDate(candidate, shift, schedule, config) !== currentStatus) return candidate;
   }
   return fromDate;
 };
 
-const getRotationWeekStart = (date, anchorDate) => {
+const getRotationWeekStart = (date, anchorDate, rotationDays) => {
   const normalizedDate = dateFromInput(dateToInput(date));
-  return addDays(normalizedDate, -positiveMod(getDayOffset(normalizedDate, anchorDate), ROTATION_DAYS));
+  return addDays(normalizedDate, -positiveMod(getDayOffset(normalizedDate, anchorDate), rotationDays));
 };
 
 const getCrewNames = (crew = []) => crew.filter(Boolean).join(" / ") || "Open";
@@ -245,21 +288,27 @@ const normalizePtoEntry = (entry, index) => ({
   note: String(entry?.note || "").trim(),
 });
 
-const createInitialSchedule = () => ({
+const createInitialSchedule = (config) => ({
   anchorDate: DEFAULT_ANCHOR_DATE,
+  offStartDates: config.defaultOffStartDates || undefined,
   selectedYear: DEFAULT_SELECTED_YEAR,
-  people: defaultPeople,
-  fleets: workbookFleets.map((fleet, index) => normalizeFleet({ ...fleet, id: `fleet-${index + 1}` }, index)),
+  people: config.hideFleets ? [] : defaultPeople,
+  fleets: config.hideFleets
+    ? [normalizeFleet({ id: "torque-test", label: config.unitLabel, crews: { A: [""], B: [""], C: [""] } }, 0)]
+    : workbookFleets.map((fleet, index) => normalizeFleet({ ...fleet, id: `fleet-${index + 1}` }, index)),
   ptoEntries: [],
 });
 
-const normalizeSchedule = (schedule) => {
-  const initial = createInitialSchedule();
+const normalizeSchedule = (schedule, config) => {
+  const initial = createInitialSchedule(config);
   if (!schedule || typeof schedule !== "object" || Array.isArray(schedule)) return initial;
 
-  const fleets = Array.isArray(schedule.fleets) && schedule.fleets.length
+  let fleets = Array.isArray(schedule.fleets) && schedule.fleets.length
     ? schedule.fleets.map(normalizeFleet)
     : initial.fleets;
+  if (config.hideFleets) {
+    fleets = [{ ...fleets[0], id: "torque-test", label: config.unitLabel }];
+  }
   const ptoEntries = Array.isArray(schedule.ptoEntries)
     ? schedule.ptoEntries.map(normalizePtoEntry)
     : initial.ptoEntries;
@@ -274,6 +323,9 @@ const normalizeSchedule = (schedule) => {
     ...initial,
     ...schedule,
     anchorDate: schedule.anchorDate || initial.anchorDate,
+    offStartDates: config.hideFleets
+      ? { ...config.defaultOffStartDates }
+      : undefined,
     selectedYear: Number(schedule.selectedYear) || initial.selectedYear,
     people,
     fleets,
@@ -281,28 +333,28 @@ const normalizeSchedule = (schedule) => {
   };
 };
 
-const loadStoredSchedule = () => {
-  if (typeof window === "undefined") return createInitialSchedule();
+const loadStoredSchedule = (config) => {
+  if (typeof window === "undefined") return createInitialSchedule(config);
   try {
-    const stored = window.localStorage.getItem(STORAGE_KEY);
-    if (!stored) return createInitialSchedule();
-    return normalizeSchedule(JSON.parse(stored));
+    const stored = window.localStorage.getItem(config.storageKey);
+    if (!stored) return createInitialSchedule(config);
+    return normalizeSchedule(JSON.parse(stored), config);
   } catch (error) {
     console.error("Unable to load pumpdown schedule", error);
-    return createInitialSchedule();
+    return createInitialSchedule(config);
   }
 };
 
-const saveScheduleToLocalStorage = (schedule) => {
+const saveScheduleToLocalStorage = (schedule, config) => {
   if (typeof window === "undefined") return;
 
   try {
     const nextDraft = JSON.stringify(schedule);
-    const currentDraft = window.localStorage.getItem(STORAGE_KEY);
+    const currentDraft = window.localStorage.getItem(config.storageKey);
     if (currentDraft && currentDraft !== nextDraft) {
-      window.localStorage.setItem(BACKUP_STORAGE_KEY, currentDraft);
+      window.localStorage.setItem(config.backupStorageKey, currentDraft);
     }
-    window.localStorage.setItem(STORAGE_KEY, nextDraft);
+    window.localStorage.setItem(config.storageKey, nextDraft);
   } catch (error) {
     console.error("Unable to save pumpdown schedule", error);
   }
@@ -344,8 +396,8 @@ const getCalendarWeeks = (dates) => {
   return weeks;
 };
 
-const getOffShiftForDate = (date, anchorDate) =>
-  SHIFT_OPTIONS.find((shift) => getShiftStatusForDate(date, shift, anchorDate) === "OFF") || "";
+const getOffShiftsForDate = (date, schedule, config) =>
+  SHIFT_OPTIONS.filter((shift) => getShiftStatusForDate(date, shift, schedule, config) === "OFF");
 
 const escapePdfText = (value) =>
   Array.from(String(value ?? ""))
@@ -533,7 +585,7 @@ const buildPdfDocument = (pages) => {
   return parts.join("");
 };
 
-const buildTodayPdf = (periodStart, periodEnd, onTodayRows, offTodayRows) => {
+const buildTodayPdf = (periodStart, periodEnd, onTodayRows, offTodayRows, config) => {
   const page = createPdfPage();
   const margin = 28;
   const gap = 16;
@@ -542,11 +594,16 @@ const buildTodayPdf = (periodStart, periodEnd, onTodayRows, offTodayRows) => {
   const availableHeight = page.height - 112;
   const maxRows = Math.max(onTodayRows.length, offTodayRows.length, 1);
   const rowHeight = Math.max(15, Math.min(28, (availableHeight - headerHeight) / maxRows));
-  const columns = [
-    { label: "Fleet", width: 50 },
-    { label: "Shift", width: 45 },
-    { label: "Personnel / PTO", width: tableWidth - 95, maxLines: 3, size: 7.4 },
-  ];
+  const columns = config.hideFleets
+    ? [
+      { label: "Shift", width: 55 },
+      { label: "Personnel / PTO", width: tableWidth - 55, maxLines: 3, size: 7.4 },
+    ]
+    : [
+      { label: "Fleet", width: 50 },
+      { label: "Shift", width: 45 },
+      { label: "Personnel / PTO", width: tableWidth - 95, maxLines: 3, size: 7.4 },
+    ];
 
   const drawTodayTable = (title, summaryLines, rows, x, y) => {
     drawText(page, title, x, y, { size: 13, bold: true });
@@ -564,7 +621,7 @@ const buildTodayPdf = (periodStart, periodEnd, onTodayRows, offTodayRows) => {
   const makeTodayRow = (row) => ({
     hasPto: row.vacationDetails.length > 0,
     values: [
-      row.fleet,
+      ...(config.hideFleets ? [] : [row.fleet]),
       `${row.shift} Shift`,
       [row.crew, row.vacationDetails.length ? `PTO: ${row.vacationDetails.join("; ")}` : ""].filter(Boolean).join(" | "),
     ],
@@ -572,8 +629,8 @@ const buildTodayPdf = (periodStart, periodEnd, onTodayRows, offTodayRows) => {
   const onSummaries = getShiftChangeSummaries(onTodayRows, (row) => `${row.shift} Shift going off ${formatShortDate(row.changeDate)}`);
   const offSummaries = getShiftChangeSummaries(offTodayRows, (row) => `${row.shift} Shift returns ${formatShortDate(row.changeDate)}`);
 
-  drawText(page, "Pumpdown Quick Reference", margin, 28, { size: 18, bold: true });
-  drawText(page, `Rotation Week: ${formatDateRange(periodStart, periodEnd)}`, margin, 52, { size: 10, color: "#475569" });
+  drawText(page, `${config.pdfTitle} Quick Reference`, margin, 28, { size: 18, bold: true });
+  drawText(page, `Rotation: ${formatDateRange(periodStart, periodEnd)}`, margin, 52, { size: 10, color: "#475569" });
   drawTodayTable(
     "On This Week",
     onSummaries,
@@ -592,13 +649,13 @@ const buildTodayPdf = (periodStart, periodEnd, onTodayRows, offTodayRows) => {
   return buildPdfDocument([page]);
 };
 
-const buildPtoPdf = (ptoEntries, fleets) => {
+const buildPtoPdf = (ptoEntries, fleets, config) => {
   const sortedEntries = [...(ptoEntries || [])].sort((a, b) => {
     const startSort = String(a.startDate || "").localeCompare(String(b.startDate || ""));
     if (startSort !== 0) return startSort;
     return String(a.person || "").localeCompare(String(b.person || ""));
   });
-  const writer = createPdfWriter("Pumpdown PTO / Vacation", `${sortedEntries.length} entries`);
+  const writer = createPdfWriter(`${config.pdfTitle} PTO / Vacation`, `${sortedEntries.length} entries`);
   const columns = [
     { label: "Person", width: 160 },
     { label: "Start", width: 96 },
@@ -614,7 +671,7 @@ const buildPtoPdf = (ptoEntries, fleets) => {
         SHIFT_OPTIONS.flatMap((shift) =>
           (fleet.crews[shift] || [])
             .filter((crewPerson) => String(crewPerson || "").trim().toLowerCase() === cleanPerson)
-            .map(() => `${fleet.label} ${shift} Shift`)
+            .map(() => config.hideFleets ? `${shift} Shift` : `${fleet.label} ${shift} Shift`)
         )
       )
       .join(", ");
@@ -633,16 +690,22 @@ const buildPtoPdf = (ptoEntries, fleets) => {
   return buildPdfDocument(writer.pages);
 };
 
-const buildPersonnelPdf = (fleets) => {
-  const writer = createPdfWriter("Pumpdown Personnel Line Up", `${fleets.length} fleets`);
-  const columns = [
-    { label: "Fleet", width: 90 },
-    { label: "A Shift", width: 210 },
-    { label: "B Shift", width: 210 },
-    { label: "C Shift", width: 210 },
-  ];
+const buildPersonnelPdf = (fleets, config) => {
+  const writer = createPdfWriter(`${config.pdfTitle} Personnel Line Up`, config.hideFleets ? "A / B / C shifts" : `${fleets.length} fleets`);
+  const columns = config.hideFleets
+    ? [
+      { label: "A Shift", width: 240 },
+      { label: "B Shift", width: 240 },
+      { label: "C Shift", width: 240 },
+    ]
+    : [
+      { label: "Fleet", width: 90 },
+      { label: "A Shift", width: 210 },
+      { label: "B Shift", width: 210 },
+      { label: "C Shift", width: 210 },
+    ];
   const rows = fleets.map((fleet) => [
-    fleet.label,
+    ...(config.hideFleets ? [] : [fleet.label]),
     getCrewNames(fleet.crews.A),
     getCrewNames(fleet.crews.B),
     getCrewNames(fleet.crews.C),
@@ -652,7 +715,7 @@ const buildPersonnelPdf = (fleets) => {
   return buildPdfDocument(writer.pages);
 };
 
-const buildYearPdf = (year, anchorDate, yearMonths) => {
+const buildYearPdf = (year, schedule, yearMonths, config) => {
   const page = createPdfPage();
   const margin = 22;
   const gapX = 8;
@@ -665,12 +728,15 @@ const buildYearPdf = (year, anchorDate, yearMonths) => {
   const cellWidth = monthWidth / 7;
   const cellHeight = (monthHeight - titleHeight - weekdayHeight) / 6;
 
-  drawText(page, `Pumpdown Year View ${year}`, margin, 26, { size: 18, bold: true });
-  drawText(page, `A Shift Off Start: ${anchorDate}`, margin, 50, { size: 9.5, color: "#475569" });
-  drawText(page, "Calendar cells show the shift that is OFF. The other two shifts are ON.", page.width - margin, 50, { size: 8.4, color: "#475569", align: "right" });
+  drawText(page, `${config.pdfTitle} Year View ${year}`, margin, 26, { size: 18, bold: true });
+  const anchorSummary = config.hideFleets
+    ? SHIFT_OPTIONS.map((shift) => `${shift}: ${schedule.offStartDates[shift]}`).join("   ")
+    : `A Shift Off Start: ${schedule.anchorDate}`;
+  drawText(page, anchorSummary, margin, 50, { size: 9.5, color: "#475569" });
+  drawText(page, "Calendar cells show the shift or shifts that are OFF.", page.width - margin, 50, { size: 8.4, color: "#475569", align: "right" });
 
   SHIFT_OPTIONS.forEach((shift, index) => {
-    const tone = shiftTone[shift];
+    const tone = config.shiftTones[shift];
     const x = page.width - margin - 210 + index * 64;
     drawRect(page, x, 25, 14, 14, { fill: tone.background, stroke: tone.border });
     drawText(page, `OFF ${shift}`, x + 20, 28, { size: 8.2, bold: true, color: tone.color });
@@ -698,16 +764,22 @@ const buildYearPdf = (year, anchorDate, yearMonths) => {
         drawRect(page, cellX, cellY, cellWidth, cellHeight, { fill: date ? "#ffffff" : "#f8fafc", stroke: "#e2e8f0", lineWidth: 0.45 });
         if (!date) return;
 
-        const offShift = getOffShiftForDate(date, anchorDate);
-        const tone = shiftTone[offShift] || shiftTone.A;
+        const offShifts = getOffShiftsForDate(date, schedule, config);
         const isToday = dateToInput(date) === getTodayDateValue();
         drawText(page, String(date.getDate()), cellX + 2, cellY + 2, { size: 5.5, bold: true, color: "#334155" });
-        drawRect(page, cellX + 2, cellY + 9, cellWidth - 4, Math.max(7, cellHeight - 11), {
-          fill: tone.background,
-          stroke: isToday ? "#2563eb" : tone.border,
-          lineWidth: isToday ? 1 : 0.45,
+        if (!offShifts.length) {
+          drawText(page, "ALL ON", cellX + cellWidth / 2, cellY + 11, { size: 4.8, bold: true, color: "#64748b", align: "center" });
+        }
+        offShifts.forEach((offShift, offIndex) => {
+          const tone = config.shiftTones[offShift];
+          const stripeHeight = Math.max(4, (cellHeight - 11) / offShifts.length);
+          drawRect(page, cellX + 2, cellY + 9 + offIndex * stripeHeight, cellWidth - 4, stripeHeight, {
+            fill: tone.background,
+            stroke: isToday ? "#2563eb" : tone.border,
+            lineWidth: isToday ? 1 : 0.45,
+          });
+          drawText(page, offShift, cellX + cellWidth / 2, cellY + 9.5 + offIndex * stripeHeight, { size: 5.4, bold: true, color: tone.color, align: "center" });
         });
-        drawText(page, offShift, cellX + cellWidth / 2, cellY + 10.5, { size: 6.4, bold: true, color: tone.color, align: "center" });
       });
     });
   });
@@ -727,14 +799,15 @@ const downloadPdf = (fileName, pdf) => {
   URL.revokeObjectURL(url);
 };
 
-export function PumpdownSchedulePage({ isMobile, onBack, onOpenTickets, wsEnergyLogo }) {
+export function PumpdownSchedulePage({ isMobile, onBack, onOpenTickets, onOpenPumpdownSchedule, onOpenTorqueTestSchedule, wsEnergyLogo, variant = "pumpdown" }) {
+  const config = scheduleConfigs[variant] || scheduleConfigs.pumpdown;
   const [isUnlocked, setIsUnlocked] = useState(() => {
     if (typeof window === "undefined") return false;
-    return window.sessionStorage.getItem(ACCESS_KEY) === "true";
+    return window.sessionStorage.getItem(config.accessKey) === "true";
   });
   const [password, setPassword] = useState("");
   const [passwordError, setPasswordError] = useState("");
-  const [schedule, setSchedule] = useState(loadStoredSchedule);
+  const [schedule, setSchedule] = useState(() => loadStoredSchedule(config));
   const initialScheduleRef = useRef(schedule);
   const [newPerson, setNewPerson] = useState("");
   const [selectedWeekOffset, setSelectedWeekOffset] = useState(0);
@@ -762,27 +835,30 @@ export function PumpdownSchedulePage({ isMobile, onBack, onOpenTickets, wsEnergy
         const { data, error } = await supabase
           .from(SHARED_SCHEDULE_TABLE)
           .select("schedule, updated_at")
-          .eq("id", SHARED_SCHEDULE_ID)
+          .eq("id", config.sharedId)
           .maybeSingle();
 
         if (error) throw error;
         if (ignore) return;
 
         if (data?.schedule && typeof data.schedule === "object" && Object.keys(data.schedule).length) {
-          const sharedSchedule = normalizeSchedule(data.schedule);
+          const sharedSchedule = normalizeSchedule(data.schedule, config);
+          const needsDateCorrection = config.hideFleets && SHIFT_OPTIONS.some(
+            (shift) => data.schedule.offStartDates?.[shift] !== config.defaultOffStartDates[shift]
+          );
           lastSharedUpdatedAtRef.current = data.updated_at || "";
-          skipNextSharedSaveRef.current = true;
+          skipNextSharedSaveRef.current = !needsDateCorrection;
           setSchedule(sharedSchedule);
-          saveScheduleToLocalStorage(sharedSchedule);
+          saveScheduleToLocalStorage(sharedSchedule, config);
           setCanSaveSharedSchedule(true);
           setSyncMessage("Shared schedule loaded");
           setSyncMessageType("success");
           return;
         }
 
-        const localSchedule = normalizeSchedule(initialScheduleRef.current);
+        const localSchedule = normalizeSchedule(initialScheduleRef.current, config);
         setSchedule(localSchedule);
-        saveScheduleToLocalStorage(localSchedule);
+        saveScheduleToLocalStorage(localSchedule, config);
         setCanSaveSharedSchedule(true);
         setSyncMessage("Shared schedule ready");
         setSyncMessageType("success");
@@ -803,11 +879,11 @@ export function PumpdownSchedulePage({ isMobile, onBack, onOpenTickets, wsEnergy
     return () => {
       ignore = true;
     };
-  }, []);
+  }, [config]);
 
   useEffect(() => {
-    const normalized = normalizeSchedule(schedule);
-    saveScheduleToLocalStorage(normalized);
+    const normalized = normalizeSchedule(schedule, config);
+    saveScheduleToLocalStorage(normalized, config);
 
     if (skipNextSharedSaveRef.current) {
       skipNextSharedSaveRef.current = false;
@@ -822,7 +898,7 @@ export function PumpdownSchedulePage({ isMobile, onBack, onOpenTickets, wsEnergy
         const { data, error } = await supabase
           .from(SHARED_SCHEDULE_TABLE)
           .upsert({
-            id: SHARED_SCHEDULE_ID,
+            id: config.sharedId,
             schedule: normalized,
             updated_at: savedAt,
           })
@@ -841,20 +917,20 @@ export function PumpdownSchedulePage({ isMobile, onBack, onOpenTickets, wsEnergy
     }, SHARED_SAVE_DELAY_MS);
 
     return () => window.clearTimeout(timeoutId);
-  }, [canSaveSharedSchedule, hasLoadedSharedSchedule, schedule]);
+  }, [canSaveSharedSchedule, config, hasLoadedSharedSchedule, schedule]);
 
   useEffect(() => {
     if (!supabase || !hasLoadedSharedSchedule) return undefined;
 
     const channel = supabase
-      .channel("pumpdown-schedule-state-sync")
+      .channel(`${config.filePrefix}-schedule-state-sync`)
       .on(
         "postgres_changes",
         {
           event: "*",
           schema: "public",
           table: SHARED_SCHEDULE_TABLE,
-          filter: `id=eq.${SHARED_SCHEDULE_ID}`,
+          filter: `id=eq.${config.sharedId}`,
         },
         (payload) => {
           const nextRow = payload.new;
@@ -869,11 +945,14 @@ export function PumpdownSchedulePage({ isMobile, onBack, onOpenTickets, wsEnergy
             return;
           }
 
-          const remoteSchedule = normalizeSchedule(nextRow.schedule);
+          const remoteSchedule = normalizeSchedule(nextRow.schedule, config);
+          const needsDateCorrection = config.hideFleets && SHIFT_OPTIONS.some(
+            (shift) => nextRow.schedule.offStartDates?.[shift] !== config.defaultOffStartDates[shift]
+          );
           lastSharedUpdatedAtRef.current = remoteUpdatedAt;
-          skipNextSharedSaveRef.current = true;
+          skipNextSharedSaveRef.current = !needsDateCorrection;
           setSchedule(remoteSchedule);
-          saveScheduleToLocalStorage(remoteSchedule);
+          saveScheduleToLocalStorage(remoteSchedule, config);
           setCanSaveSharedSchedule(true);
           setSyncMessage("Shared schedule updated from another device");
           setSyncMessageType("info");
@@ -889,7 +968,7 @@ export function PumpdownSchedulePage({ isMobile, onBack, onOpenTickets, wsEnergy
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [hasLoadedSharedSchedule]);
+  }, [config, hasLoadedSharedSchedule]);
 
   const selectedYear = Number(schedule.selectedYear) || DEFAULT_SELECTED_YEAR;
   const availableYears = useMemo(
@@ -900,31 +979,31 @@ export function PumpdownSchedulePage({ isMobile, onBack, onOpenTickets, wsEnergy
   const todayInputValue = useMemo(() => getTodayDateValue(), []);
   const todayDate = useMemo(() => dateFromInput(todayInputValue), [todayInputValue]);
   const currentRotationStart = useMemo(
-    () => getRotationWeekStart(todayDate, schedule.anchorDate),
-    [schedule.anchorDate, todayDate]
+    () => getRotationWeekStart(todayDate, config.hideFleets ? schedule.offStartDates.A : schedule.anchorDate, config.rotationDays),
+    [config, schedule.anchorDate, schedule.offStartDates, todayDate]
   );
   const selectedRotationStart = useMemo(
-    () => addDays(currentRotationStart, selectedWeekOffset * ROTATION_DAYS),
-    [currentRotationStart, selectedWeekOffset]
+    () => addDays(currentRotationStart, selectedWeekOffset * config.rotationDays),
+    [config.rotationDays, currentRotationStart, selectedWeekOffset]
   );
   const selectedRotationEnd = useMemo(
-    () => addDays(selectedRotationStart, ROTATION_DAYS - 1),
-    [selectedRotationStart]
+    () => addDays(selectedRotationStart, config.rotationDays - 1),
+    [config.rotationDays, selectedRotationStart]
   );
   const quickReferenceTabs = useMemo(
     () => Array.from({ length: 6 }, (_, index) => {
-      const start = addDays(currentRotationStart, index * ROTATION_DAYS);
-      const end = addDays(start, ROTATION_DAYS - 1);
+      const start = addDays(currentRotationStart, index * config.rotationDays);
+      const end = addDays(start, config.rotationDays - 1);
       return { index, start, end, label: formatDateRange(start, end) };
     }),
-    [currentRotationStart]
+    [config.rotationDays, currentRotationStart]
   );
 
   const getRowsForDate = useMemo(() => (date, ptoStartDate = date, ptoEndDate = date) => {
     const rows = [];
     schedule.fleets.forEach((fleet) => {
       SHIFT_OPTIONS.forEach((shift) => {
-        const status = getShiftStatusForDate(date, shift, schedule.anchorDate);
+        const status = getShiftStatusForDate(date, shift, schedule, config);
         const crewList = fleet.crews[shift] || [];
         const ptoEntries = getPtoEntriesForDateRange(schedule.ptoEntries || [], ptoStartDate, ptoEndDate);
         const vacationPeople = crewList.filter((person) =>
@@ -948,12 +1027,12 @@ export function PumpdownSchedulePage({ isMobile, onBack, onOpenTickets, wsEnergy
           vacationPeople,
           vacationDetails,
           ptoEntries,
-          changeDate: getNextChangeDate(shift, date, schedule.anchorDate),
+          changeDate: getNextChangeDate(shift, date, schedule, config),
         });
       });
     });
     return rows;
-  }, [schedule.anchorDate, schedule.fleets, schedule.ptoEntries]);
+  }, [config, schedule]);
 
   const selectedReferenceRows = useMemo(
     () => getRowsForDate(selectedRotationStart, selectedRotationStart, selectedRotationEnd),
@@ -1003,13 +1082,13 @@ export function PumpdownSchedulePage({ isMobile, onBack, onOpenTickets, wsEnergy
           if (!cleanPerson) return;
           const key = cleanPerson.toLowerCase();
           const existing = assignments.get(key) || { person: cleanPerson, spots: [] };
-          existing.spots.push(`${fleet.label} ${shift} Shift`);
+          existing.spots.push(config.hideFleets ? `${shift} Shift` : `${fleet.label} ${shift} Shift`);
           assignments.set(key, existing);
         });
       });
     });
     return Array.from(assignments.values()).filter((item) => item.spots.length > 1);
-  }, [schedule.fleets]);
+  }, [config.hideFleets, schedule.fleets]);
 
   const unlockPage = (event) => {
     event.preventDefault();
@@ -1018,20 +1097,20 @@ export function PumpdownSchedulePage({ isMobile, onBack, onOpenTickets, wsEnergy
       setPasswordError("Incorrect password");
       return;
     }
-    window.sessionStorage.setItem(ACCESS_KEY, "true");
+    window.sessionStorage.setItem(config.accessKey, "true");
     setIsUnlocked(true);
     setPassword("");
     setPasswordError("");
   };
 
   const lockPage = () => {
-    window.sessionStorage.removeItem(ACCESS_KEY);
+    window.sessionStorage.removeItem(config.accessKey);
     setIsUnlocked(false);
     setPassword("");
   };
 
   const updateSchedule = (updater) => {
-    setSchedule((prev) => normalizeSchedule(typeof updater === "function" ? updater(prev) : updater));
+    setSchedule((prev) => normalizeSchedule(typeof updater === "function" ? updater(prev) : updater, config));
   };
 
   const updateField = (key, value) => updateSchedule((prev) => ({ ...prev, [key]: value }));
@@ -1097,8 +1176,8 @@ export function PumpdownSchedulePage({ isMobile, onBack, onOpenTickets, wsEnergy
     const existingAssignment = findPersonAssignment(value, { fleetId, shift, index });
     if (existingAssignment) {
       const targetFleet = schedule.fleets.find((fleet) => fleet.id === fleetId);
-      const assignedSpot = `${existingAssignment.fleet} ${existingAssignment.shift} Shift`;
-      const requestedSpot = `${targetFleet?.label || "this fleet"} ${shift} Shift`;
+      const assignedSpot = config.hideFleets ? `${existingAssignment.shift} Shift` : `${existingAssignment.fleet} ${existingAssignment.shift} Shift`;
+      const requestedSpot = config.hideFleets ? `${shift} Shift` : `${targetFleet?.label || "this fleet"} ${shift} Shift`;
       showAssignmentWarning(`Cannot assign ${value} to ${requestedSpot}. ${value} is already assigned to ${assignedSpot}. Please remove ${value} from ${assignedSpot} to continue.`);
       return;
     }
@@ -1228,19 +1307,19 @@ export function PumpdownSchedulePage({ isMobile, onBack, onOpenTickets, wsEnergy
     if (view === "today") {
       const startDate = dateToInput(selectedRotationStart);
       const endDate = dateToInput(selectedRotationEnd);
-      downloadPdf(`pumpdown-quick-reference-${startDate}-to-${endDate}.pdf`, buildTodayPdf(selectedRotationStart, selectedRotationEnd, selectedOnRows, selectedOffRows));
+      downloadPdf(`${config.filePrefix}-quick-reference-${startDate}-to-${endDate}.pdf`, buildTodayPdf(selectedRotationStart, selectedRotationEnd, selectedOnRows, selectedOffRows, config));
       setDownloadMessage("Quick Reference PDF downloaded");
     }
     if (view === "personnel") {
-      downloadPdf(`pumpdown-personnel-line-up-${safeDate}.pdf`, buildPersonnelPdf(schedule.fleets));
+      downloadPdf(`${config.filePrefix}-personnel-line-up-${safeDate}.pdf`, buildPersonnelPdf(schedule.fleets, config));
       setDownloadMessage("Personnel Line Up PDF downloaded");
     }
     if (view === "pto") {
-      downloadPdf(`pumpdown-pto-vacation-${safeDate}.pdf`, buildPtoPdf(schedule.ptoEntries || [], schedule.fleets));
+      downloadPdf(`${config.filePrefix}-pto-vacation-${safeDate}.pdf`, buildPtoPdf(schedule.ptoEntries || [], schedule.fleets, config));
       setDownloadMessage("PTO / Vacation PDF downloaded");
     }
     if (view === "year") {
-      downloadPdf(`pumpdown-year-view-${selectedYear}.pdf`, buildYearPdf(selectedYear, schedule.anchorDate, yearMonths));
+      downloadPdf(`${config.filePrefix}-year-view-${selectedYear}.pdf`, buildYearPdf(selectedYear, schedule, yearMonths, config));
       setDownloadMessage("Year View PDF downloaded");
     }
     window.setTimeout(() => setDownloadMessage(""), 10000);
@@ -1268,7 +1347,7 @@ export function PumpdownSchedulePage({ isMobile, onBack, onOpenTickets, wsEnergy
 
   const renderFleetEditor = (fleet) => (
     <div key={fleet.id} style={{ ...refinedCard, boxShadow: "none" }}>
-      <div style={{ display: "flex", gap: 10, alignItems: "end", flexWrap: "wrap", marginBottom: 14 }}>
+      {!config.hideFleets ? <div style={{ display: "flex", gap: 10, alignItems: "end", flexWrap: "wrap", marginBottom: 14 }}>
         <div style={{ flex: "1 1 220px" }}>
           <label style={label}>Fleet Name</label>
           <input style={compactInput} value={fleet.label} onChange={(event) => updateFleetLabel(fleet.id, event.target.value)} />
@@ -1278,11 +1357,11 @@ export function PumpdownSchedulePage({ isMobile, onBack, onOpenTickets, wsEnergy
             Remove Fleet
           </button>
         ) : null}
-      </div>
+      </div> : null}
 
       <div style={{ display: "grid", gap: 12, gridTemplateColumns: isMobile ? "1fr" : "repeat(3, minmax(0, 1fr))" }}>
         {SHIFT_OPTIONS.map((shift) => {
-          const tone = shiftTone[shift];
+          const tone = config.shiftTones[shift];
           return (
             <div key={shift} style={{ border: `1px solid ${tone.border}`, background: tone.background, borderRadius: 12, padding: 12 }}>
               <div style={{ color: tone.color, fontWeight: 800, marginBottom: 10 }}>{shift} Shift</div>
@@ -1302,7 +1381,7 @@ export function PumpdownSchedulePage({ isMobile, onBack, onOpenTickets, wsEnergy
       <div style={{ padding: "12px 14px", background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
           <h3 style={{ margin: 0, color: "#111827", fontSize: 17 }}>{title}</h3>
-          <span style={{ color: "#64748b", fontSize: 12, fontWeight: 900 }}>{rowsToRender.length} crews</span>
+          <span style={{ color: "#64748b", fontSize: 12, fontWeight: 900 }}>{rowsToRender.length} {config.hideFleets ? "shifts" : "crews"}</span>
         </div>
         {summaryLines.length ? (
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 9 }}>
@@ -1316,11 +1395,11 @@ export function PumpdownSchedulePage({ isMobile, onBack, onOpenTickets, wsEnergy
       </div>
       <div style={{ display: "grid", gap: 10, padding: 12 }}>
         {rowsToRender.length ? rowsToRender.map((rowItem) => {
-          const tone = shiftTone[rowItem.shift];
+          const tone = config.shiftTones[rowItem.shift];
           return (
             <div key={`${rowItem.fleetId}-${rowItem.shift}-${title}`} style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 11, background: "#ffffff" }}>
-              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "90px 78px minmax(0, 1fr)", gap: 10, alignItems: "center" }}>
-                <strong style={{ color: "#111827", fontSize: 14 }}>{rowItem.fleet}</strong>
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : config.hideFleets ? "90px minmax(0, 1fr)" : "90px 78px minmax(0, 1fr)", gap: 10, alignItems: "center" }}>
+                {!config.hideFleets ? <strong style={{ color: "#111827", fontSize: 14 }}>{rowItem.fleet}</strong> : null}
                 <span style={{ border: `1px solid ${tone.border}`, background: tone.background, color: tone.color, borderRadius: 999, padding: "4px 8px", fontSize: 12, fontWeight: 900, textAlign: "center" }}>
                   {rowItem.shift} Shift
                 </span>
@@ -1377,8 +1456,8 @@ export function PumpdownSchedulePage({ isMobile, onBack, onOpenTickets, wsEnergy
                   <div style={{ color: "#111827", fontSize: 12, fontWeight: 900, marginBottom: 5 }}>{date.getDate()}</div>
                   <div style={{ display: "grid", gap: 3 }}>
                     {SHIFT_OPTIONS.map((shift) => {
-                      const status = getShiftStatusForDate(date, shift, schedule.anchorDate);
-                      const tone = shiftTone[shift];
+                      const status = getShiftStatusForDate(date, shift, schedule, config);
+                      const tone = config.shiftTones[shift];
                       return (
                         <div
                           key={shift}
@@ -1389,9 +1468,10 @@ export function PumpdownSchedulePage({ isMobile, onBack, onOpenTickets, wsEnergy
                             justifyContent: "space-between",
                             gap: 4,
                             borderRadius: 6,
-                            border: `1px solid ${status === "ON" ? tone.border : "#cbd5e1"}`,
-                            background: status === "ON" ? tone.background : "#f1f5f9",
-                            color: status === "ON" ? tone.color : "#64748b",
+                            border: `1px solid ${status === "ON" || config.hideFleets ? tone.border : "#cbd5e1"}`,
+                            background: status === "ON" || config.hideFleets ? tone.background : "#f1f5f9",
+                            color: status === "ON" || config.hideFleets ? tone.color : "#64748b",
+                            opacity: config.hideFleets && status === "OFF" ? 0.62 : 1,
                             fontSize: 10,
                             fontWeight: 900,
                             lineHeight: 1,
@@ -1426,6 +1506,11 @@ export function PumpdownSchedulePage({ isMobile, onBack, onOpenTickets, wsEnergy
                 Pumpdown Tickets
               </button>
             ) : null}
+            {onOpenPumpdownSchedule ? (
+              <button type="button" onClick={onOpenPumpdownSchedule} style={{ ...mutedButton, flex: isMobile ? "1 1 100%" : "none" }}>
+                Pumpdown Schedule
+              </button>
+            ) : null}
           </div>
           <form onSubmit={unlockPage} style={{ ...refinedCard, padding: isMobile ? 18 : 24 }}>
             <div style={{ textAlign: "center", marginBottom: 18 }}>
@@ -1435,7 +1520,7 @@ export function PumpdownSchedulePage({ isMobile, onBack, onOpenTickets, wsEnergy
                 style={{ width: isMobile ? 130 : 180, height: "auto", objectFit: "contain", marginBottom: 10 }}
               />
               <h1 style={{ margin: 0, fontSize: isMobile ? 24 : 32, lineHeight: 1.2, color: "#111827" }}>
-                Pumpdown Schedule
+                {config.title}
               </h1>
             </div>
             <label style={label}>Password</label>
@@ -1517,6 +1602,16 @@ export function PumpdownSchedulePage({ isMobile, onBack, onOpenTickets, wsEnergy
                   Pumpdown Tickets
                 </button>
               ) : null}
+              {onOpenPumpdownSchedule ? (
+                <button type="button" onClick={onOpenPumpdownSchedule} style={{ ...mutedButton, flex: isMobile ? 1 : "none" }}>
+                  Pumpdown Schedule
+                </button>
+              ) : null}
+              {onOpenTorqueTestSchedule ? (
+                <button type="button" onClick={onOpenTorqueTestSchedule} style={{ ...mutedButton, flex: isMobile ? 1 : "none" }}>
+                  Torque &amp; Test Schedule
+                </button>
+              ) : null}
             </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", width: isMobile ? "100%" : "auto" }}>
               <button type="button" onClick={lockPage} style={{ ...pageButton, flex: isMobile ? "0 0 92px" : "none", background: "#fee2e2", border: "1px solid #fca5a5", color: "#991b1b", WebkitTextFillColor: "#991b1b" }}>
@@ -1531,7 +1626,7 @@ export function PumpdownSchedulePage({ isMobile, onBack, onOpenTickets, wsEnergy
               style={{ width: isMobile ? 130 : 190, height: "auto", display: "block", margin: "0 auto 10px", objectFit: "contain" }}
             />
             <h1 style={{ margin: 0, fontSize: isMobile ? 24 : 32, lineHeight: 1.2, color: "#111827" }}>
-              Pumpdown 14/7 Schedule
+              {config.heading}
             </h1>
             <div style={{ marginTop: 10, display: "flex", justifyContent: "center", gap: 8, flexWrap: "wrap" }}>
               <span style={{ ...notificationBase, ...notificationStyles[syncMessageType] }}>{syncMessage}</span>
@@ -1550,7 +1645,7 @@ export function PumpdownSchedulePage({ isMobile, onBack, onOpenTickets, wsEnergy
               <div>
                 <h2 style={{ margin: 0, fontSize: 22, color: "#111827" }}>On Today / Upcoming Weeks</h2>
                 <div style={{ marginTop: 4, color: "#64748b", fontSize: 13, fontWeight: 700 }}>
-                  Rotation week {formatDateRange(selectedRotationStart, selectedRotationEnd)}
+                  {config.rotationDays}-day rotation {formatDateRange(selectedRotationStart, selectedRotationEnd)}
                 </div>
               </div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -1591,15 +1686,19 @@ export function PumpdownSchedulePage({ isMobile, onBack, onOpenTickets, wsEnergy
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
               <div>
                 <h2 style={{ margin: 0, fontSize: 22, color: "#111827" }}>Personnel Line Up</h2>
-                <div style={{ marginTop: 4, color: "#64748b", fontSize: 13, fontWeight: 700 }}>Edit fleets, shifts, roster names, and crew slots here.</div>
+                <div style={{ marginTop: 4, color: "#64748b", fontSize: 13, fontWeight: 700 }}>
+                  {config.hideFleets ? "Edit each shift's roster names and crew slots here." : "Edit fleets, shifts, roster names, and crew slots here."}
+                </div>
               </div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <button type="button" onClick={() => downloadSchedulePdf("personnel")} style={pdfButton}>
                   Download Line Up PDF
                 </button>
-                <button type="button" onClick={addFleet} style={{ ...addActionButton, borderRadius: 10 }}>
-                  Add Fleet
-                </button>
+                {!config.hideFleets ? (
+                  <button type="button" onClick={addFleet} style={{ ...addActionButton, borderRadius: 10 }}>
+                    Add Fleet
+                  </button>
+                ) : null}
               </div>
             </div>
 
@@ -1726,7 +1825,7 @@ export function PumpdownSchedulePage({ isMobile, onBack, onOpenTickets, wsEnergy
               </button>
             </div>
 
-            <div style={{ display: "grid", gap: 12, gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 1fr) 260px", alignItems: "end", marginBottom: 14 }}>
+            <div style={{ display: "grid", gap: 12, gridTemplateColumns: isMobile || config.hideFleets ? "1fr" : "minmax(0, 1fr) 260px", alignItems: "end", marginBottom: 14 }}>
               <div>
                 <label style={label}>Year</label>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -1750,15 +1849,17 @@ export function PumpdownSchedulePage({ isMobile, onBack, onOpenTickets, wsEnergy
                   ))}
                 </div>
               </div>
-              <div>
-                <label style={label}>A Shift Off Start</label>
-                <input style={input} type="date" value={schedule.anchorDate} onChange={(event) => updateField("anchorDate", event.target.value)} />
-              </div>
+              {!config.hideFleets ? (
+                <div>
+                  <label style={label}>A Shift Off Start</label>
+                  <input style={input} type="date" value={schedule.anchorDate} onChange={(event) => updateField("anchorDate", event.target.value)} />
+                </div>
+              ) : null}
             </div>
 
             <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
               {SHIFT_OPTIONS.map((shift) => {
-                const tone = shiftTone[shift];
+                const tone = config.shiftTones[shift];
                 return (
                   <span key={shift} style={{ display: "inline-flex", alignItems: "center", gap: 6, color: tone.color, fontSize: 13, fontWeight: 800 }}>
                     <span style={{ width: 14, height: 14, borderRadius: 3, background: tone.background, border: `1px solid ${tone.border}` }} />
@@ -1780,4 +1881,8 @@ export function PumpdownSchedulePage({ isMobile, onBack, onOpenTickets, wsEnergy
       </div>
     </div>
   );
+}
+
+export function TorqueTestSchedulePage(props) {
+  return <PumpdownSchedulePage {...props} variant="torqueTest" />;
 }

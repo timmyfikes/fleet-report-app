@@ -1,7 +1,7 @@
 import React from "react";
 import { card, input } from "../config";
 
-export function HeaderCard({ isMobile, activeFleet, fleetTabs, setActiveFleet, setShowHelp, wsEnergyLogo, onOpenPumpdown, onOpenPumpdownSchedule, onOpenFleetAudit }) {
+export function HeaderCard({ isMobile, activeFleet, fleetTabs, setActiveFleet, setShowHelp, wsEnergyLogo, onOpenPumpdown, onOpenPumpdownSchedule, onOpenTorqueTestSchedule, onOpenFleetAudit }) {
   return (
     <div style={{ ...card, marginBottom: 16, position: "relative" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
@@ -44,6 +44,26 @@ export function HeaderCard({ isMobile, activeFleet, fleetTabs, setActiveFleet, s
               }}
             >
               Pumpdown Schedule
+            </button>
+          ) : null}
+          {onOpenTorqueTestSchedule ? (
+            <button
+              type="button"
+              onClick={onOpenTorqueTestSchedule}
+              style={{
+                ...input,
+                width: "auto",
+                padding: "8px 12px",
+                background: "#fef9c3",
+                border: "1px solid #facc15",
+                color: "#854d0e",
+                WebkitTextFillColor: "#854d0e",
+                fontWeight: 700,
+                fontSize: 13,
+                cursor: "pointer",
+              }}
+            >
+              Torque &amp; Test Schedule
             </button>
           ) : null}
           {onOpenFleetAudit ? (

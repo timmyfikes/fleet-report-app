@@ -401,7 +401,7 @@ export const PUMP_OPTIONS = [
   "LTC-3068",
 ];
 
-export const TRACTOR_OPTIONS = Array.from({ length: 24 }, (_, idx) => `RT-${String(idx + 5).padStart(2, "0")}`);
+export const TRACTOR_OPTIONS = Array.from({ length: 26 }, (_, idx) => `RT-${String(idx + 5).padStart(2, "0")}`);
 
 export const TRUCK_OPTIONS = ["416","464","496","706","710","715","721","722","723","724","725","727","728","745","746","747","749","767","768","769"];
 

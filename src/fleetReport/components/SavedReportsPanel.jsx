@@ -13,6 +13,10 @@ export function SavedReportsPanel({
   deleteTargetId,
   deleteReport,
   cancelDeletePrompt,
+  deleteAllTargetFleet,
+  openDeleteAllPrompt,
+  deleteAllReports,
+  cancelDeleteAllPrompt,
 }) {
   return (
     <div style={card}>
@@ -77,20 +81,36 @@ export function SavedReportsPanel({
                 📥 Load This Report
               </button>
               {deleteUnlocked ? (
-                <button
-                  onClick={() => openDeletePrompt(r.id)}
-                  style={{
-                    background: "#fee2e2",
-                    color: "#991b1b",
-                    border: "1px solid #fca5a5",
-                    borderRadius: 10,
-                    padding: "8px 10px",
-                    cursor: "pointer",
-                    fontWeight: 600,
-                  }}
-                >
-                  🗑️ Delete Report
-                </button>
+                <>
+                  <button
+                    onClick={() => openDeletePrompt(r.id)}
+                    style={{
+                      background: "#fee2e2",
+                      color: "#991b1b",
+                      border: "1px solid #fca5a5",
+                      borderRadius: 10,
+                      padding: "8px 10px",
+                      cursor: "pointer",
+                      fontWeight: 600,
+                    }}
+                  >
+                    🗑️ Delete Report
+                  </button>
+                  <button
+                    onClick={() => openDeleteAllPrompt(activeFleet, r.id)}
+                    style={{
+                      background: "#991b1b",
+                      color: "#ffffff",
+                      border: "1px solid #7f1d1d",
+                      borderRadius: 10,
+                      padding: "8px 10px",
+                      cursor: "pointer",
+                      fontWeight: 600,
+                    }}
+                  >
+                    🗑️ Delete All
+                  </button>
+                </>
               ) : null}
             </div>
 
@@ -113,6 +133,45 @@ export function SavedReportsPanel({
                   </button>
                   <button
                     onClick={cancelDeletePrompt}
+                    style={{
+                      background: "#e5e7eb",
+                      color: "#111827",
+                      border: "none",
+                      borderRadius: 10,
+                      padding: "8px 12px",
+                      cursor: "pointer",
+                      fontWeight: 600,
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            {String(deleteAllTargetFleet?.fleet) === String(activeFleet) && deleteAllTargetFleet?.reportId === r.id && deleteTargetId === null ? (
+              <div style={{ marginTop: 10, padding: 12, border: "1px solid #fca5a5", background: "#fff7f7", borderRadius: 12 }}>
+                <strong style={{ color: "#991b1b" }}>
+                  Delete all {visibleSavedReports.length} saved reports for Fleet {activeFleet}?
+                </strong>
+                <div style={{ color: "#7f1d1d", marginTop: 4 }}>This cannot be undone.</div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10, justifyContent: "center", alignItems: "center" }}>
+                  <button
+                    onClick={() => deleteAllReports(activeFleet)}
+                    style={{
+                      background: "#991b1b",
+                      color: "#ffffff",
+                      border: "none",
+                      borderRadius: 10,
+                      padding: "8px 12px",
+                      cursor: "pointer",
+                      fontWeight: 600,
+                    }}
+                  >
+                    Confirm Delete All
+                  </button>
+                  <button
+                    onClick={cancelDeleteAllPrompt}
                     style={{
                       background: "#e5e7eb",
                       color: "#111827",

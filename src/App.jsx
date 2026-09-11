@@ -45,13 +45,14 @@ import { SavedReportsPanel } from "./fleetReport/components/SavedReportsPanel";
 import { DeleteAccessModal } from "./fleetReport/components/DeleteAccessModal";
 import { HelpModal } from "./fleetReport/components/HelpModal";
 import { PumpdownTicketsPage } from "./pumpdown/PumpdownTicketsPage";
-import { PumpdownSchedulePage } from "./pumpdown/PumpdownSchedulePage";
+import { PumpdownSchedulePage, TorqueTestSchedulePage } from "./pumpdown/PumpdownSchedulePage";
 import { FleetAuditPage } from "./fleetAudit/FleetAuditPage";
 
 const getInitialPage = () => {
   if (typeof window === "undefined") return "fleet";
   if (window.location.hash === "#/pumpdown") return "pumpdown";
   if (window.location.hash === "#/pumpdown-schedule") return "pumpdown-schedule";
+  if (window.location.hash === "#/torque-test-schedule") return "torque-test-schedule";
   if (window.location.hash === "#/fleet-audit") return "fleet-audit";
   return "fleet";
 };
@@ -80,6 +81,7 @@ export default function FleetReportApp() {
       fleet: "#/",
       pumpdown: "#/pumpdown",
       "pumpdown-schedule": "#/pumpdown-schedule",
+      "torque-test-schedule": "#/torque-test-schedule",
       "fleet-audit": "#/fleet-audit",
     };
     const nextHash = pageHashes[page] || "#/";
@@ -108,6 +110,7 @@ export default function FleetReportApp() {
 
   const [deletePassword, setDeletePassword] = useState("");
   const [deleteTargetId, setDeleteTargetId] = useState(null);
+  const [deleteAllTargetFleet, setDeleteAllTargetFleet] = useState(null);
   const [deleteUnlocked, setDeleteUnlocked] = useState(false);
   const [showDeleteAccessPrompt, setShowDeleteAccessPrompt] = useState(false);
   const [selectedReport, setSelectedReport] = useState(null);
@@ -772,7 +775,28 @@ ${issueLines}`;
   setDeleteTargetId(null);
 };
 
+  const deleteAllReports = async (fleet) => {
+    if (!deleteUnlocked || !supabase) return;
+
+    const { error } = await supabase
+      .from("reports")
+      .delete()
+      .eq("fleet", fleet);
+
+    if (error) {
+      console.error(error);
+      return;
+    }
+
+    if (String(resolvedSelectedReport?.fleet) === String(fleet)) {
+      setSelectedReport(null);
+    }
+    setDeleteAllTargetFleet(null);
+    await fetchSavedReports();
+  };
+
   const openDeletePrompt = (reportId) => {
+    setDeleteAllTargetFleet(null);
     setDeleteTargetId(reportId);
   };
 
@@ -780,9 +804,19 @@ ${issueLines}`;
     setDeleteTargetId(null);
   };
 
+  const openDeleteAllPrompt = (fleet, reportId) => {
+    setDeleteTargetId(null);
+    setDeleteAllTargetFleet({ fleet, reportId });
+  };
+
+  const cancelDeleteAllPrompt = () => {
+    setDeleteAllTargetFleet(null);
+  };
+
   const openDeleteAccessPrompt = () => {
     setShowDeleteAccessPrompt(true);
     setDeleteTargetId(null);
+    setDeleteAllTargetFleet(null);
     setDeletePassword("");
   };
 
@@ -839,6 +873,18 @@ ${issueLines}`;
         isMobile={isMobile}
         onBack={() => navigateToPage("fleet")}
         onOpenTickets={() => navigateToPage("pumpdown")}
+        onOpenTorqueTestSchedule={() => navigateToPage("torque-test-schedule")}
+        wsEnergyLogo={wsEnergyLogo}
+      />
+    );
+  }
+
+  if (activePage === "torque-test-schedule") {
+    return (
+      <TorqueTestSchedulePage
+        isMobile={isMobile}
+        onBack={() => navigateToPage("fleet")}
+        onOpenPumpdownSchedule={() => navigateToPage("pumpdown-schedule")}
         wsEnergyLogo={wsEnergyLogo}
       />
     );
@@ -866,6 +912,7 @@ ${issueLines}`;
           wsEnergyLogo={wsEnergyLogo}
           onOpenPumpdown={() => navigateToPage("pumpdown")}
           onOpenPumpdownSchedule={() => navigateToPage("pumpdown-schedule")}
+          onOpenTorqueTestSchedule={() => navigateToPage("torque-test-schedule")}
           onOpenFleetAudit={() => navigateToPage("fleet-audit")}
         />
 
@@ -1943,6 +1990,10 @@ style={selectInput}
               deleteTargetId={deleteTargetId}
               deleteReport={deleteReport}
               cancelDeletePrompt={cancelDeletePrompt}
+              deleteAllTargetFleet={deleteAllTargetFleet}
+              openDeleteAllPrompt={openDeleteAllPrompt}
+              deleteAllReports={deleteAllReports}
+              cancelDeleteAllPrompt={cancelDeleteAllPrompt}
             />
 
             <DeleteAccessModal
