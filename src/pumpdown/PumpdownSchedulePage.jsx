@@ -585,7 +585,119 @@ const buildPdfDocument = (pages) => {
   return parts.join("");
 };
 
+const drawPdfFooter = (page, text) => {
+  drawRect(page, 30, page.height - 42, page.width - 60, 1, { fill: "#e2e8f0", stroke: null });
+  drawText(page, text, 30, page.height - 31, { size: 8, color: "#64748b" });
+  drawText(page, "WS Energy Services", page.width - 30, page.height - 31, { size: 8, bold: true, color: "#475569", align: "right" });
+};
+
+const drawShiftCardHeader = (page, shift, tone, status, x, y, width) => {
+  drawRect(page, x, y, width, 48, { fill: tone.background, stroke: tone.border, lineWidth: 1.2 });
+  drawText(page, `${shift} SHIFT`, x + 14, y + 13, { size: 15, bold: true, color: tone.color });
+  if (status) {
+    const statusFill = status === "ON" ? "#dcfce7" : "#fee2e2";
+    const statusBorder = status === "ON" ? "#86efac" : "#fca5a5";
+    const statusColor = status === "ON" ? "#166534" : "#991b1b";
+    drawRect(page, x + width - 60, y + 11, 46, 25, { fill: statusFill, stroke: statusBorder });
+    drawText(page, status, x + width - 37, y + 17, { size: 10, bold: true, color: statusColor, align: "center" });
+  }
+};
+
+const buildTorqueTestQuickReferencePdf = (periodStart, periodEnd, rows, config) => {
+  const page = createPdfPage();
+  const margin = 30;
+  const gap = 14;
+  const cardWidth = (page.width - margin * 2 - gap * 2) / 3;
+  const cardY = 106;
+  const cardHeight = 408;
+
+  drawRect(page, 0, 0, page.width, page.height, { fill: "#ffffff", stroke: null });
+  drawText(page, "Torque & Test Quick Reference", margin, 28, { size: 20, bold: true });
+  drawText(page, `10-day rotation: ${formatDateRange(periodStart, periodEnd)}`, margin, 56, { size: 11, bold: true, color: "#475569" });
+  drawText(page, "Current lineup and upcoming shift change", margin, 74, { size: 9, color: "#64748b" });
+
+  SHIFT_OPTIONS.forEach((shift, shiftIndex) => {
+    const row = rows.find((item) => item.shift === shift);
+    const tone = config.shiftTones[shift];
+    const x = margin + shiftIndex * (cardWidth + gap);
+    drawRect(page, x, cardY, cardWidth, cardHeight, { fill: "#ffffff", stroke: tone.border, lineWidth: 1.2 });
+    drawShiftCardHeader(page, shift, tone, row?.status, x, cardY, cardWidth);
+
+    drawText(page, row?.status === "OFF" ? "Returns to work" : "First day off", x + 14, cardY + 67, { size: 8.5, bold: true, color: "#64748b" });
+    drawText(page, row ? formatFullDate(row.changeDate) : "Not scheduled", x + 14, cardY + 83, { size: 11.5, bold: true, color: "#111827" });
+    drawRect(page, x + 14, cardY + 110, cardWidth - 28, 1, { fill: "#e2e8f0", stroke: null });
+    drawText(page, "PERSONNEL", x + 14, cardY + 126, { size: 8.5, bold: true, color: tone.color });
+
+    const people = (row?.crewList || []).filter(Boolean);
+    if (!people.length) {
+      drawText(page, "Open shift", x + 14, cardY + 150, { size: 11, bold: true, color: "#64748b" });
+    } else {
+      people.slice(0, 10).forEach((person, personIndex) => {
+        const rowY = cardY + 148 + personIndex * 23;
+        drawRect(page, x + 14, rowY + 17, cardWidth - 28, 0.6, { fill: "#eef2f7", stroke: null });
+        drawText(page, person, x + 14, rowY, { size: 10.2, color: "#111827", maxWidth: cardWidth - 28 });
+      });
+      if (people.length > 10) {
+        drawText(page, `+ ${people.length - 10} more`, x + 14, cardY + 382, { size: 9, bold: true, color: tone.color });
+      }
+    }
+
+    if (row?.vacationDetails?.length) {
+      drawRect(page, x + 12, cardY + cardHeight - 58, cardWidth - 24, 42, { fill: "#fff1f2", stroke: "#fecaca" });
+      drawText(page, "PTO / VACATION", x + 20, cardY + cardHeight - 49, { size: 7.5, bold: true, color: "#b91c1c" });
+      drawText(page, row.vacationDetails.join("; "), x + 20, cardY + cardHeight - 35, { size: 8.2, color: "#991b1b", maxWidth: cardWidth - 40 });
+    }
+  });
+
+  drawPdfFooter(page, `Prepared ${formatPdfDate(getTodayDateValue())}`);
+  return buildPdfDocument([page]);
+};
+
+const buildTorqueTestPersonnelPdf = (fleets, config) => {
+  const page = createPdfPage();
+  const margin = 30;
+  const gap = 14;
+  const cardWidth = (page.width - margin * 2 - gap * 2) / 3;
+  const crews = fleets[0]?.crews || { A: [], B: [], C: [] };
+  const maxPeople = Math.max(...SHIFT_OPTIONS.map((shift) => (crews[shift] || []).filter(Boolean).length), 1);
+  const cardY = 100;
+  const cardHeight = Math.min(440, Math.max(270, 92 + maxPeople * 30));
+
+  drawRect(page, 0, 0, page.width, page.height, { fill: "#ffffff", stroke: null });
+  drawText(page, "Torque & Test Personnel Line Up", margin, 28, { size: 20, bold: true });
+  drawText(page, "20 days on / 10 days off", margin, 56, { size: 11, bold: true, color: "#475569" });
+  drawText(page, "Current A, B, and C shift assignments", margin, 74, { size: 9, color: "#64748b" });
+
+  SHIFT_OPTIONS.forEach((shift, shiftIndex) => {
+    const tone = config.shiftTones[shift];
+    const x = margin + shiftIndex * (cardWidth + gap);
+    const people = (crews[shift] || []).filter(Boolean);
+    drawRect(page, x, cardY, cardWidth, cardHeight, { fill: "#ffffff", stroke: tone.border, lineWidth: 1.2 });
+    drawShiftCardHeader(page, shift, tone, null, x, cardY, cardWidth);
+    drawText(page, `${people.length} ${people.length === 1 ? "person" : "people"}`, x + 14, cardY + 65, { size: 8.5, bold: true, color: "#64748b" });
+
+    if (!people.length) {
+      drawText(page, "No personnel assigned", x + 14, cardY + 100, { size: 11, bold: true, color: "#64748b" });
+    } else {
+      people.forEach((person, personIndex) => {
+        const rowY = cardY + 94 + personIndex * 30;
+        if (rowY > cardY + cardHeight - 28) return;
+        drawRect(page, x + 14, rowY - 6, 22, 22, { fill: tone.background, stroke: tone.border });
+        drawText(page, String(personIndex + 1), x + 25, rowY, { size: 8.5, bold: true, color: tone.color, align: "center" });
+        drawText(page, person, x + 46, rowY, { size: 10.5, color: "#111827", maxWidth: cardWidth - 60 });
+        drawRect(page, x + 14, rowY + 22, cardWidth - 28, 0.6, { fill: "#eef2f7", stroke: null });
+      });
+    }
+  });
+
+  drawPdfFooter(page, `Updated ${formatPdfDate(getTodayDateValue())}`);
+  return buildPdfDocument([page]);
+};
+
 const buildTodayPdf = (periodStart, periodEnd, onTodayRows, offTodayRows, config) => {
+  if (config.hideFleets) {
+    return buildTorqueTestQuickReferencePdf(periodStart, periodEnd, [...onTodayRows, ...offTodayRows], config);
+  }
   const page = createPdfPage();
   const margin = 28;
   const gap = 16;
@@ -691,6 +803,7 @@ const buildPtoPdf = (ptoEntries, fleets, config) => {
 };
 
 const buildPersonnelPdf = (fleets, config) => {
+  if (config.hideFleets) return buildTorqueTestPersonnelPdf(fleets, config);
   const writer = createPdfWriter(`${config.pdfTitle} Personnel Line Up`, config.hideFleets ? "A / B / C shifts" : `${fleets.length} fleets`);
   const columns = config.hideFleets
     ? [
