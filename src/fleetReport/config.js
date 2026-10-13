@@ -1,3 +1,4 @@
+import { reconcilePm } from "./reconcilePm.js";
 import { createClient } from "@supabase/supabase-js";
 
 export const input = {
@@ -318,7 +319,7 @@ export const createInitialState = (fleet = "1") => ({
   issues: [""],
 });
 
-export const fleetTabs = ["1", "2", "3", "4", "5", "6", "7", "8"];
+export const fleetTabs = ["1", "2", "3", "4", "5", "6", "7", "8", "9"];
 
 export const FLEET_DRAFT_STORAGE_PREFIX = "fleet-report-draft-v1";
 export const getFleetDraftKey = (fleet) => `${FLEET_DRAFT_STORAGE_PREFIX}-${fleet}`;
@@ -340,11 +341,14 @@ export const loadFleetDraft = (fleet) => {
 };
 
 export const buildFleetStateFromDraft = (fleet) => {
-  const initial = createInitialState(fleet);
-  const draft = loadFleetDraft(fleet);
-  if (!draft) return initial;
+  return normalizeFleetReport(loadFleetDraft(fleet), fleet);
+};
 
-  return {
+export const normalizeFleetReport = (draft, fleet = draft?.fleet || "1") => {
+  const initial = createInitialState(fleet);
+  if (!draft) return reconcilePm(initial);
+
+  return reconcilePm({
     ...initial,
     ...draft,
     fleet,
@@ -387,7 +391,7 @@ export const buildFleetStateFromDraft = (fleet) => {
     },
     partsNeeded: toArrayOrFallback(draft.partsNeeded, initial.partsNeeded),
     issues: toArrayOrFallback(draft.issues, initial.issues),
-  };
+  });
 };
 
 export const PUMP_OPTIONS = [

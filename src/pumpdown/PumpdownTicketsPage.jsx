@@ -31,6 +31,7 @@ const homeSectionOptions = [
   { value: "6", label: "Fleet 6", teamsTitle: "Fleet 6 -" },
   { value: "7", label: "Fleet 7", teamsTitle: "Fleet 7 -" },
   { value: "8", label: "Fleet 8", teamsTitle: "Fleet 8 -" },
+  { value: "9", label: "Fleet 9", teamsTitle: "Fleet 9 -" },
   { value: "Misc", label: "Misc Tickets", teamsTitle: "Misc TICKETS" },
 ];
 

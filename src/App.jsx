@@ -1,3 +1,4 @@
+import { reconcilePm } from "./fleetReport/reconcilePm.js";
 import React, { useMemo, useState, useEffect, useCallback, useRef } from "react";
 import {
   input,
@@ -19,12 +20,11 @@ import {
   getGeneratorPmDetails,
   formatPmStatusLabel,
   blankGeneratorPm,
-  blankPumpPm,
-  blankTractorPm,
   blankFuelEntry,
   blankChemical,
   blankRental,
   buildFleetStateFromDraft,
+  normalizeFleetReport,
   loadFleetDraft,
   getFleetDraftKey,
   fleetTabs,
@@ -105,6 +105,9 @@ export default function FleetReportApp() {
   const [savedReports, setSavedReports] = useState([]);
   const [reportsLoading, setReportsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const saveInFlight = useRef(false);
+  const [draftMessage, setDraftMessage] = useState("");
+  const writtenDrafts = useRef({});
   const [saveMessage, setSaveMessage] = useState("");
   const [saveMessageType, setSaveMessageType] = useState("success");
   const [loadMessage, setLoadMessage] = useState("");
@@ -140,46 +143,59 @@ export default function FleetReportApp() {
     }
 
     setReportsLoading(true);
+    try {
     const { data, error } = await supabase
       .from("reports")
       .select("id, fleet, report_date, shift, report_data, created_at")
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false })
+      .abortSignal(AbortSignal.timeout(30000));
 
     if (error) {
-      console.error(error);
-      setReportsLoading(false);
-      return;
+      throw error;
     }
 
     const normalized = (data || []).map((row) => ({
+      ...normalizeFleetReport(row.report_data, String(row.fleet)),
       id: row.id,
-      ...row.report_data,
       fleet: String(row.fleet ?? row.report_data?.fleet ?? ""),
       date: row.report_date ?? row.report_data?.date ?? "",
       shift: row.shift ?? row.report_data?.shift ?? "Day",
     }));
 
     setSavedReports(normalized);
-    setReportsLoading(false);
+    } catch (error) {
+      console.error(error);
+      setLoadMessage("Could not load saved reports. Check your connection and refresh to retry; your form is still here.");
+    } finally {
+      setReportsLoading(false);
+    }
   }, []);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchSavedReports();
   }, [fetchSavedReports]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return undefined;
-    const timeoutId = window.setTimeout(() => {
+    const persist = () => {
+      let failed = false;
       Object.entries(fleetForms).forEach(([fleet, data]) => {
+        const serialized = JSON.stringify(data);
+        if (writtenDrafts.current[fleet] === serialized) return;
         try {
-          window.localStorage.setItem(getFleetDraftKey(fleet), JSON.stringify(data));
+          window.localStorage.setItem(getFleetDraftKey(fleet), serialized);
+          writtenDrafts.current[fleet] = serialized;
         } catch (error) {
+          failed = true;
           console.error(`Unable to save local draft for fleet ${fleet}`, error);
         }
       });
-    }, 300);
-    return () => window.clearTimeout(timeoutId);
+      setDraftMessage(failed
+        ? "Draft could not be stored on this device. Keep this page open and save your report online."
+        : "Draft stored on this device. Use Save Report to share it with the team.");
+    };
+    persist();
+    window.addEventListener("pagehide", persist);
+    return () => window.removeEventListener("pagehide", persist);
   }, [fleetForms]);
 
   const visibleSavedReports = useMemo(
@@ -196,7 +212,7 @@ export default function FleetReportApp() {
   const updateFleetForm = useCallback((updater) => {
     setFleetForms((prev) => ({
       ...prev,
-      [activeFleet]: updater(prev[activeFleet]),
+      [activeFleet]: reconcilePm(updater(prev[activeFleet])),
     }));
   }, [activeFleet]);
 
@@ -227,33 +243,7 @@ export default function FleetReportApp() {
       const next = [...prev[key]];
       next[index] = value;
 
-      let nextPm = prev.pm;
-
-      if (key === "pumpUnits") {
-        const pumps = [...prev.pm.pumps];
-        pumps[index] = { ...pumps[index], pump: value };
-        nextPm = { ...prev.pm, pumps };
-      }
-
-      if (key === "tractors") {
-        const tractors = [...prev.pm.tractors];
-        tractors[index] = { ...tractors[index], tractor: value };
-        nextPm = { ...nextPm, tractors };
-      }
-
-      if (key === "dayTrucks") {
-        const trucks = [...prev.pm.trucks];
-        trucks[0] = { ...trucks[0], truck: value };
-        nextPm = { ...nextPm, trucks };
-      }
-
-      if (key === "nightTrucks") {
-        const trucks = [...prev.pm.trucks];
-        trucks[1] = { ...trucks[1], truck: value };
-        nextPm = { ...nextPm, trucks };
-      }
-
-      return { ...prev, [key]: next, pm: nextPm };
+      return { ...prev, [key]: next };
     });
   };
 
@@ -333,9 +323,7 @@ export default function FleetReportApp() {
     updateFleetForm((prev) => {
       if (prev.pumpUnits.length <= 1) return prev;
       const nextPumpUnits = prev.pumpUnits.filter((_, i) => i !== index);
-      const nextPumpPm = [...prev.pm.pumps];
-      nextPumpPm[index] = blankPumpPm();
-      return { ...prev, pumpUnits: nextPumpUnits, pm: { ...prev.pm, pumps: nextPumpPm } };
+      return { ...prev, pumpUnits: nextPumpUnits };
     });
   };
 
@@ -350,9 +338,7 @@ export default function FleetReportApp() {
     updateFleetForm((prev) => {
       if (prev.tractors.length <= 1) return prev;
       const nextTractors = prev.tractors.filter((_, i) => i !== index);
-      const nextTractorPm = [...prev.pm.tractors];
-      nextTractorPm[index] = blankTractorPm();
-      return { ...prev, tractors: nextTractors, pm: { ...prev.pm, tractors: nextTractorPm } };
+      return { ...prev, tractors: nextTractors };
     });
   };
 
@@ -562,10 +548,7 @@ ${issueLines}`;
       if (missing.length) errors.push(`${unit}: ${missing.join(", ")}`);
     });
 
-    const truckChecks = [
-      { unit: currentForm.dayTrucks[0], pm: currentForm.pm.trucks[0] || {}, index: 0 },
-      { unit: currentForm.nightTrucks[0], pm: currentForm.pm.trucks[1] || {}, index: 1 },
-    ];
+    const truckChecks = currentForm.pm.trucks.map((pm, index) => ({ unit: pm.truck, pm, index }));
 
     truckChecks.forEach(({ unit, pm, index }) => {
       if (!isRealTruckUnit(unit)) return;
@@ -637,77 +620,78 @@ ${issueLines}`;
   }, []);
 
   const saveReport = async () => {
-  if (isSaving) return;
+    if (saveInFlight.current) return;
 
-  const pmErrors = pmValidationDetails.errors;
-  if (pmErrors.length) {
-    setShowPmValidation(true);
-    setSaveMessageType("error");
-    setSaveMessage(`Complete PM before saving: ${pmErrors[0]}`);
-    const firstMissing = [...pmValidationDetails.missingFieldIds][0];
-    jumpToPmField(firstMissing);
-    setTimeout(() => setSaveMessage(""), NOTIFICATION_MS);
-    return;
-  }
+    const pmErrors = pmValidationDetails.errors;
+    if (pmErrors.length) {
+      setShowPmValidation(true);
+      setSaveMessageType("error");
+      setSaveMessage(`Complete PM before saving: ${pmErrors[0]}`);
+      const firstMissing = [...pmValidationDetails.missingFieldIds][0];
+      jumpToPmField(firstMissing);
+      setTimeout(() => setSaveMessage(""), NOTIFICATION_MS);
+      return;
+    }
 
-  if (!supabase) {
-    setSaveMessageType("error");
-    setSaveMessage("Supabase is not connected");
-    setTimeout(() => setSaveMessage(""), NOTIFICATION_MS);
-    return;
-  }
+    if (!supabase) {
+      setSaveMessageType("error");
+      setSaveMessage("Supabase is not connected");
+      setTimeout(() => setSaveMessage(""), NOTIFICATION_MS);
+      return;
+    }
 
-  setIsSaving(true);
-  setSaveMessageType("success");
-
-  const payload = {
-    fleet: form.fleet,
-    report_date: form.date,
-    shift: form.shift,
-    report_data: form,
-  };
-
-  const { data: insertedRow, error } = await supabase
-    .from("reports")
-    .insert(payload)
-    .select("id, fleet, report_date, shift, report_data, created_at")
-    .single();
-
-  if (error) {
-    console.error(error);
-    setSaveMessageType("error");
-    setSaveMessage("Save failed");
-    setIsSaving(false);
-    setTimeout(() => setSaveMessage(""), NOTIFICATION_MS);
-    return;
-  }
-
-  if (insertedRow) {
-    const normalizedInserted = {
-      id: insertedRow.id,
-      ...insertedRow.report_data,
-      fleet: String(insertedRow.fleet ?? insertedRow.report_data?.fleet ?? ""),
-      date: insertedRow.report_date ?? insertedRow.report_data?.date ?? "",
-      shift: insertedRow.shift ?? insertedRow.report_data?.shift ?? "Day",
-    };
-    setSelectedReport(normalizedInserted);
-  }
-
-  await fetchSavedReports();
-  setShowPmValidation(false);
-  setSaveMessage("Report Saved ✅");
-  jumpToCopyCta(form.fleet);
-
-  setTimeout(() => {
-    setIsSaving(false);
+    saveInFlight.current = true;
+    setIsSaving(true);
     setSaveMessage("");
-  }, NOTIFICATION_MS);
-};
+    setSaveMessageType("success");
+    try {
+
+    const payload = {
+      fleet: form.fleet,
+      report_date: form.date,
+      shift: form.shift,
+      report_data: form,
+    };
+
+    const { data: insertedRow, error } = await supabase
+      .from("reports")
+      .insert(payload)
+      .select("id, fleet, report_date, shift, report_data, created_at")
+      .abortSignal(AbortSignal.timeout(30000))
+      .single();
+
+    if (error) throw error;
+
+    if (insertedRow) {
+      const normalizedInserted = {
+        ...insertedRow.report_data,
+        id: insertedRow.id,
+        fleet: String(insertedRow.fleet ?? insertedRow.report_data?.fleet ?? ""),
+        date: insertedRow.report_date ?? insertedRow.report_data?.date ?? "",
+        shift: insertedRow.shift ?? insertedRow.report_data?.shift ?? "Day",
+      };
+      setSelectedReport(normalizedInserted);
+      setSavedReports((previous) => [normalizedInserted, ...previous.filter((report) => report.id !== normalizedInserted.id)]);
+    }
+
+    setShowPmValidation(false);
+    setSaveMessage(`Fleet ${form.fleet} report saved online ✅ Any changes made while saving need another save.`);
+    jumpToCopyCta(form.fleet);
+
+    } catch (error) {
+      console.error(error);
+      setSaveMessageType("error");
+      setSaveMessage(`Could not confirm the online save: ${error.message || "Check your connection."} Your form is still here. Check saved reports before retrying.`);
+    } finally {
+      saveInFlight.current = false;
+      setIsSaving(false);
+    }
+  };
 
   const loadLastReport = () => {
     const lastForFleet = savedReports.find((report) => String(report.fleet) === String(activeFleet));
     if (lastForFleet) {
-      updateFleetForm(() => ({ ...lastForFleet, id: undefined, date: new Date().toISOString().slice(0, 10), fleet: activeFleet }));
+      updateFleetForm(() => ({ ...normalizeFleetReport(lastForFleet), id: undefined, date: new Date().toISOString().slice(0, 10), fleet: activeFleet }));
       setShowPmValidation(false);
       setLoadMessage("Last Report Loaded ✅");
       setTimeout(() => setLoadMessage(""), NOTIFICATION_MS);
@@ -716,7 +700,7 @@ ${issueLines}`;
 
     const localDraft = loadFleetDraft(activeFleet);
     if (!localDraft) return;
-    updateFleetForm(() => ({ ...buildFleetStateFromDraft(activeFleet), ...localDraft, fleet: activeFleet }));
+    updateFleetForm(() => ({ ...buildFleetStateFromDraft(activeFleet), fleet: activeFleet }));
     setShowPmValidation(false);
     setLoadMessage("Local Draft Loaded ✅");
     setTimeout(() => setLoadMessage(""), NOTIFICATION_MS);
@@ -851,7 +835,7 @@ ${issueLines}`;
     setActiveFleet(String(report.fleet));
     setFleetForms((prev) => ({
       ...prev,
-      [String(report.fleet)]: { ...report, id: undefined },
+      [String(report.fleet)]: { ...normalizeFleetReport(report), id: undefined },
     }));
     setShowPmValidation(false);
     setSelectedReport(null);
@@ -1782,45 +1766,25 @@ style={selectInput}
                 </div>
               ) : null}
               <h4>🛻 TRUCKS</h4>
-              {isRealTruckUnit(form.dayTrucks[0]) ? (() => {
-                const item = form.pm.trucks[0];
+              {form.pm.trucks.map((item, i) => {
+                if (!isRealTruckUnit(item.truck)) return null;
                 const truckPm = getTruckPmDetails(item, form.date);
                 const truckStatus = truckPm.status;
                 const statusColors = getStatusColors(truckStatus);
                 return (
-                  <div style={{ ...card, ...statusColors, marginBottom: 10, padding: 12 }}>
+                  <div key={item.truck} style={{ ...card, ...statusColors, marginBottom: 10, padding: 12 }}>
                     <div style={row}>
                       <div><label style={label}>Truck #</label><input style={{ ...input, background: "#f8fafc", fontWeight: 700 }} value={item.truck} readOnly /></div>
-                      <div><label style={getPmLabelStyle("pm-trucks-0-miles")}>Current Miles{getPmRequiredSuffix("pm-trucks-0-miles")}</label><input id="pm-trucks-0-miles" style={getPmInputStyle("pm-trucks-0-miles")} type="text" inputMode="numeric" pattern="[0-9]*" value={item.miles} onChange={(e) => updatePm("trucks", 0, "miles", e.target.value.replace(/[^0-9]/g, ""))} /></div>
-                      <div><label style={getPmLabelStyle("pm-trucks-0-engineHours")}>Current Engine Hours{getPmRequiredSuffix("pm-trucks-0-engineHours")}</label><input id="pm-trucks-0-engineHours" style={getPmInputStyle("pm-trucks-0-engineHours")} type="text" inputMode="numeric" pattern="[0-9]*" value={item.engineHours || ""} onChange={(e) => updatePm("trucks", 0, "engineHours", e.target.value.replace(/[^0-9]/g, ""))} /></div>
-                      <div><label style={getPmLabelStyle("pm-trucks-0-dueAt")}>Miles Service Due At{getPmRequiredSuffix("pm-trucks-0-dueAt")}</label><input id="pm-trucks-0-dueAt" style={getPmInputStyle("pm-trucks-0-dueAt")} type="text" inputMode="numeric" pattern="[0-9]*" value={item.dueAt} onChange={(e) => updatePm("trucks", 0, "dueAt", e.target.value.replace(/[^0-9]/g, ""))} /></div>
-                      <div><label style={getPmLabelStyle("pm-trucks-0-engineHoursDueAt")}>Engine Hours Service Due At{getPmRequiredSuffix("pm-trucks-0-engineHoursDueAt")}</label><input id="pm-trucks-0-engineHoursDueAt" style={getPmInputStyle("pm-trucks-0-engineHoursDueAt")} type="text" inputMode="numeric" pattern="[0-9]*" value={item.engineHoursDueAt || ""} onChange={(e) => updatePm("trucks", 0, "engineHoursDueAt", e.target.value.replace(/[^0-9]/g, ""))} /></div>
-                      <div><label style={getPmLabelStyle("pm-trucks-0-qcDue")}>QC Due Date{getPmRequiredSuffix("pm-trucks-0-qcDue")}</label><input id="pm-trucks-0-qcDue" style={getPmInputStyle("pm-trucks-0-qcDue")} type="date" value={item.qcDue} onChange={(e) => updatePm("trucks", 0, "qcDue", e.target.value)} /></div>
+                      <div><label style={getPmLabelStyle(`pm-trucks-${i}-miles`)}>Current Miles{getPmRequiredSuffix(`pm-trucks-${i}-miles`)}</label><input id={`pm-trucks-${i}-miles`} style={getPmInputStyle(`pm-trucks-${i}-miles`)} type="text" inputMode="numeric" pattern="[0-9]*" value={item.miles} onChange={(e) => updatePm("trucks", i, "miles", e.target.value.replace(/[^0-9]/g, ""))} /></div>
+                      <div><label style={getPmLabelStyle(`pm-trucks-${i}-engineHours`)}>Current Engine Hours{getPmRequiredSuffix(`pm-trucks-${i}-engineHours`)}</label><input id={`pm-trucks-${i}-engineHours`} style={getPmInputStyle(`pm-trucks-${i}-engineHours`)} type="text" inputMode="numeric" pattern="[0-9]*" value={item.engineHours || ""} onChange={(e) => updatePm("trucks", i, "engineHours", e.target.value.replace(/[^0-9]/g, ""))} /></div>
+                      <div><label style={getPmLabelStyle(`pm-trucks-${i}-dueAt`)}>Miles Service Due At{getPmRequiredSuffix(`pm-trucks-${i}-dueAt`)}</label><input id={`pm-trucks-${i}-dueAt`} style={getPmInputStyle(`pm-trucks-${i}-dueAt`)} type="text" inputMode="numeric" pattern="[0-9]*" value={item.dueAt} onChange={(e) => updatePm("trucks", i, "dueAt", e.target.value.replace(/[^0-9]/g, ""))} /></div>
+                      <div><label style={getPmLabelStyle(`pm-trucks-${i}-engineHoursDueAt`)}>Engine Hours Service Due At{getPmRequiredSuffix(`pm-trucks-${i}-engineHoursDueAt`)}</label><input id={`pm-trucks-${i}-engineHoursDueAt`} style={getPmInputStyle(`pm-trucks-${i}-engineHoursDueAt`)} type="text" inputMode="numeric" pattern="[0-9]*" value={item.engineHoursDueAt || ""} onChange={(e) => updatePm("trucks", i, "engineHoursDueAt", e.target.value.replace(/[^0-9]/g, ""))} /></div>
+                      <div><label style={getPmLabelStyle(`pm-trucks-${i}-qcDue`)}>QC Due Date{getPmRequiredSuffix(`pm-trucks-${i}-qcDue`)}</label><input id={`pm-trucks-${i}-qcDue`} style={getPmInputStyle(`pm-trucks-${i}-qcDue`)} type="date" value={item.qcDue} onChange={(e) => updatePm("trucks", i, "qcDue", e.target.value)} /></div>
                       <div><label style={label}>Status</label><input style={{ ...input, background: "#f8fafc", fontWeight: 700 }} value={formatPmStatusLabel(truckPm)} readOnly /></div>
                     </div>
                   </div>
                 );
-              })() : <div style={{ color: "#64748b", marginBottom: 10 }}>Add a day shift truck above to enable truck PM.</div>}
-
-              {isRealTruckUnit(form.nightTrucks[0]) ? (() => {
-                const item = form.pm.trucks[1];
-                const truckPm = getTruckPmDetails(item, form.date);
-                const truckStatus = truckPm.status;
-                const statusColors = getStatusColors(truckStatus);
-                return (
-                  <div style={{ ...card, ...statusColors, marginBottom: 10, padding: 12 }}>
-                    <div style={row}>
-                      <div><label style={label}>Truck #</label><input style={{ ...input, background: "#f8fafc", fontWeight: 700 }} value={item.truck} readOnly /></div>
-                      <div><label style={getPmLabelStyle("pm-trucks-1-miles")}>Current Miles{getPmRequiredSuffix("pm-trucks-1-miles")}</label><input id="pm-trucks-1-miles" style={getPmInputStyle("pm-trucks-1-miles")} type="text" inputMode="numeric" pattern="[0-9]*" value={item.miles} onChange={(e) => updatePm("trucks", 1, "miles", e.target.value.replace(/[^0-9]/g, ""))} /></div>
-                      <div><label style={getPmLabelStyle("pm-trucks-1-engineHours")}>Current Engine Hours{getPmRequiredSuffix("pm-trucks-1-engineHours")}</label><input id="pm-trucks-1-engineHours" style={getPmInputStyle("pm-trucks-1-engineHours")} type="text" inputMode="numeric" pattern="[0-9]*" value={item.engineHours || ""} onChange={(e) => updatePm("trucks", 1, "engineHours", e.target.value.replace(/[^0-9]/g, ""))} /></div>
-                      <div><label style={getPmLabelStyle("pm-trucks-1-dueAt")}>Miles Service Due At{getPmRequiredSuffix("pm-trucks-1-dueAt")}</label><input id="pm-trucks-1-dueAt" style={getPmInputStyle("pm-trucks-1-dueAt")} type="text" inputMode="numeric" pattern="[0-9]*" value={item.dueAt} onChange={(e) => updatePm("trucks", 1, "dueAt", e.target.value.replace(/[^0-9]/g, ""))} /></div>
-                      <div><label style={getPmLabelStyle("pm-trucks-1-engineHoursDueAt")}>Engine Hours Service Due At{getPmRequiredSuffix("pm-trucks-1-engineHoursDueAt")}</label><input id="pm-trucks-1-engineHoursDueAt" style={getPmInputStyle("pm-trucks-1-engineHoursDueAt")} type="text" inputMode="numeric" pattern="[0-9]*" value={item.engineHoursDueAt || ""} onChange={(e) => updatePm("trucks", 1, "engineHoursDueAt", e.target.value.replace(/[^0-9]/g, ""))} /></div>
-                      <div><label style={getPmLabelStyle("pm-trucks-1-qcDue")}>QC Due Date{getPmRequiredSuffix("pm-trucks-1-qcDue")}</label><input id="pm-trucks-1-qcDue" style={getPmInputStyle("pm-trucks-1-qcDue")} type="date" value={item.qcDue} onChange={(e) => updatePm("trucks", 1, "qcDue", e.target.value)} /></div>
-                      <div><label style={label}>Status</label><input style={{ ...input, background: "#f8fafc", fontWeight: 700 }} value={formatPmStatusLabel(truckPm)} readOnly /></div>
-                    </div>
-                  </div>
-                );
-              })() : null}
+              })}
 
               <h4>🚜 TRACTORS</h4>
               {form.tractors.some(Boolean) ? form.pm.tractors.map((item, i) => {
@@ -1930,10 +1894,12 @@ style={selectInput}
               ) : null}
             </div>
 
+            <div role="status" style={{ marginTop: 12 }}>{draftMessage}</div>
             <div style={notificationStrip}>
               {saveMessage && (
                 <div style={{ ...notificationBase, ...(saveMessageType === "error" ? notificationStyles.error : notificationStyles.success) }}>
                   <span>{saveMessage}</span>
+                  {saveMessageType === "error" && <button type="button" onClick={fetchSavedReports} disabled={reportsLoading}>Refresh saved reports</button>}
                 </div>
               )}
               {loadMessage && (
