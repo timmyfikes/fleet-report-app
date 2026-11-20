@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   addActionButton,
   card,
@@ -45,11 +45,17 @@ const customerOptions = [
   "Apache",
   "APEX",
   "Bandera",
+  "Blue Arrow",
   "Chevron",
-  "Coterra",
+  "Crescent Energy",
+  "Devon",
   "Diamondback",
   "Exxon",
+  "Lakewood",
   "Matador",
+  "Oxy",
+  "Permian Resources",
+  "SM Energy",
   "Other",
 ];
 
@@ -651,6 +657,9 @@ export function PumpdownTicketsPage({ isMobile, onBack, onOpenSchedule, wsEnergy
   const [passwordError, setPasswordError] = useState("");
   const [tickets, setTickets] = useState(loadStoredTickets);
   const persistenceRef = useRef(null);
+  const ticketElementsRef = useRef(new Map());
+  const pendingFollowRef = useRef(null);
+  const [moveNotice, setMoveNotice] = useState("");
   const [syncMessage, setSyncMessage] = useState(supabase ? "Loading shared tickets..." : "Using local ticket backup");
   const [syncMessageType, setSyncMessageType] = useState(supabase ? "info" : "warning");
   const [newTicketSection, setNewTicketSection] = useState("1");
@@ -704,6 +713,39 @@ export function PumpdownTicketsPage({ isMobile, onBack, onOpenSchedule, wsEnergy
     [visibleTickets]
   );
 
+  useLayoutEffect(() => {
+    const follow = pendingFollowRef.current;
+    if (!follow) return;
+    pendingFollowRef.current = null;
+    const element = ticketElementsRef.current.get(follow.id);
+    if (!element) return;
+    const control = element.querySelector(`[data-ticket-field="${follow.key}"]`);
+    if (follow.hadFocus && control && document.activeElement !== control) {
+      control.focus({ preventScroll: true });
+      if (follow.selectionStart !== null && typeof control.setSelectionRange === "function") {
+        control.setSelectionRange(follow.selectionStart, follow.selectionEnd);
+      }
+    }
+    if (follow.moved) {
+      const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      (follow.hadFocus && control ? control : element).scrollIntoView({
+        behavior: reducedMotion ? "instant" : "smooth",
+        block: "center",
+        inline: "nearest",
+      });
+      if (!reducedMotion) element.animate([
+        { backgroundColor: "#fef3c7" },
+        { backgroundColor: "transparent" },
+      ], { duration: 1800 });
+    }
+  }, [tickets]);
+
+  useEffect(() => {
+    if (!moveNotice) return undefined;
+    const timeout = window.setTimeout(() => setMoveNotice(""), 6000);
+    return () => window.clearTimeout(timeout);
+  }, [moveNotice]);
+
   const activeTicketCount = useMemo(() => visibleTickets.filter(ticketHasContent).length, [visibleTickets]);
   const statusCounts = useMemo(() => getStatusCounts(visibleTickets), [visibleTickets]);
   const teamsText = useMemo(() => formatPumpdownTickets(visibleTickets), [visibleTickets]);
@@ -733,6 +775,28 @@ export function PumpdownTicketsPage({ isMobile, onBack, onOpenSchedule, wsEnergy
     if (key === "customer" && value !== "Other") fields.customerOther = "";
     if (key === "startMode" && value === "tbd") fields.startDate = "";
     if (key === "endMode" && value === "tbd") fields.endDate = "";
+    const ticket = tickets.find((item) => item.id === id);
+    if (!ticket) return;
+    const nextTicket = { ...ticket, ...fields };
+    const previousSection = getDisplaySection(ticket);
+    const nextSection = getDisplaySection(nextTicket);
+    const previousIndex = groupedTickets.find((group) => group.value === previousSection)?.tickets.findIndex((item) => item.id === id);
+    const nextIndex = tickets
+      .map((item) => item.id === id ? nextTicket : item)
+      .filter((item) => getDisplaySection(item) === nextSection)
+      .sort(compareTicketsForSection(nextSection))
+      .findIndex((item) => item.id === id);
+    const moved = previousSection !== nextSection || previousIndex !== nextIndex;
+    const activeControl = document.activeElement;
+    pendingFollowRef.current = {
+      id, key, moved,
+      hadFocus: ticketElementsRef.current.get(id)?.contains(activeControl),
+      selectionStart: activeControl?.selectionStart ?? null,
+      selectionEnd: activeControl?.selectionEnd ?? null,
+    };
+    if (moved) {
+      setMoveNotice(`${nextTicket.ticket ? `Ticket #${nextTicket.ticket}` : "Ticket"} moved to ${getDisplaySectionLabel(nextSection)}. You're still editing it.`);
+    }
     persistenceRef.current.edit({ type: "update", id, fields });
   };
 
@@ -741,6 +805,10 @@ export function PumpdownTicketsPage({ isMobile, onBack, onOpenSchedule, wsEnergy
   };
 
   const removeTicket = (id) => {
+    const ticket = tickets.find((item) => item.id === id);
+    if (!ticket) return;
+    const description = [ticket.ticket ? `Ticket #${ticket.ticket}` : "this ticket", getCustomerName(ticket), ticket.job].filter(Boolean).join(" — ");
+    if (!window.confirm(`Remove ${description}?\n\nThis removes the ticket from the shared list for everyone.`)) return;
     persistenceRef.current.edit({ type: "remove", id });
   };
 
@@ -776,7 +844,7 @@ export function PumpdownTicketsPage({ isMobile, onBack, onOpenSchedule, wsEnergy
 
     return (
       <>
-        <select style={compactSelect} value={ticket.fleet} onChange={(event) => updateTicket(ticket.id, "fleet", event.target.value)}>
+        <select style={compactSelect} value={ticket.fleet} data-ticket-field="fleet" onChange={(event) => updateTicket(ticket.id, "fleet", event.target.value)}>
           {homeSectionOptions.map((sectionOption) => (
             <option key={sectionOption.value} value={sectionOption.value}>{sectionOption.label}</option>
           ))}
@@ -793,7 +861,7 @@ export function PumpdownTicketsPage({ isMobile, onBack, onOpenSchedule, wsEnergy
       <select
         style={{ ...compactSelect, flex: ticket.customer === "Other" ? "0 0 94px" : 1 }}
         value={ticket.customer}
-        onChange={(event) => updateTicket(ticket.id, "customer", event.target.value)}
+        data-ticket-field="customer" onChange={(event) => updateTicket(ticket.id, "customer", event.target.value)}
       >
         <option value="">Select</option>
         {customerOptions.map((customer) => (
@@ -805,7 +873,7 @@ export function PumpdownTicketsPage({ isMobile, onBack, onOpenSchedule, wsEnergy
           style={{ ...compactInput, flex: 1, minWidth: 0 }}
           placeholder="Customer"
           value={ticket.customerOther}
-          onChange={(event) => updateTicket(ticket.id, "customerOther", event.target.value)}
+          data-ticket-field="customerOther" onChange={(event) => updateTicket(ticket.id, "customerOther", event.target.value)}
         />
       ) : null}
     </div>
@@ -815,7 +883,7 @@ export function PumpdownTicketsPage({ isMobile, onBack, onOpenSchedule, wsEnergy
     <input
       style={compactInput}
       value={ticket.job}
-      onChange={(event) => updateTicket(ticket.id, "job", event.target.value)}
+      data-ticket-field="job" onChange={(event) => updateTicket(ticket.id, "job", event.target.value)}
       placeholder="Pad, well, or job"
     />
   );
@@ -825,7 +893,7 @@ export function PumpdownTicketsPage({ isMobile, onBack, onOpenSchedule, wsEnergy
       <select
         style={{ ...compactSelect, flex: ticket.startMode === "date" ? "0 0 98px" : 1 }}
         value={ticket.startMode}
-        onChange={(event) => updateTicket(ticket.id, "startMode", event.target.value)}
+        data-ticket-field="startMode" onChange={(event) => updateTicket(ticket.id, "startMode", event.target.value)}
       >
         {startModeOptions.map((option) => (
           <option key={option.value} value={option.value}>{option.label}</option>
@@ -836,7 +904,7 @@ export function PumpdownTicketsPage({ isMobile, onBack, onOpenSchedule, wsEnergy
           style={{ ...compactInput, flex: 1, minWidth: 0 }}
           type="date"
           value={ticket.startDate}
-          onChange={(event) => updateTicket(ticket.id, "startDate", event.target.value)}
+          data-ticket-field="startDate" onChange={(event) => updateTicket(ticket.id, "startDate", event.target.value)}
         />
       ) : null}
     </div>
@@ -847,7 +915,7 @@ export function PumpdownTicketsPage({ isMobile, onBack, onOpenSchedule, wsEnergy
       <select
         style={{ ...compactSelect, flex: ticket.endMode === "date" ? "0 0 92px" : 1 }}
         value={ticket.endMode}
-        onChange={(event) => updateTicket(ticket.id, "endMode", event.target.value)}
+        data-ticket-field="endMode" onChange={(event) => updateTicket(ticket.id, "endMode", event.target.value)}
       >
         {endModeOptions.map((option) => (
           <option key={option.value} value={option.value}>{option.label}</option>
@@ -858,7 +926,7 @@ export function PumpdownTicketsPage({ isMobile, onBack, onOpenSchedule, wsEnergy
           style={{ ...compactInput, flex: 1, minWidth: 0 }}
           type="date"
           value={ticket.endDate}
-          onChange={(event) => updateTicket(ticket.id, "endDate", event.target.value)}
+          data-ticket-field="endDate" onChange={(event) => updateTicket(ticket.id, "endDate", event.target.value)}
         />
       ) : null}
     </div>
@@ -869,13 +937,13 @@ export function PumpdownTicketsPage({ isMobile, onBack, onOpenSchedule, wsEnergy
       style={compactInput}
       inputMode="numeric"
       value={ticket.ticket}
-      onChange={(event) => updateTicket(ticket.id, "ticket", event.target.value.replace(/[^0-9]/g, ""))}
+      data-ticket-field="ticket" onChange={(event) => updateTicket(ticket.id, "ticket", event.target.value.replace(/[^0-9]/g, ""))}
       placeholder="Ticket"
     />
   );
 
   const renderStatusControl = (ticket) => (
-    <select style={compactSelect} value={ticket.status} onChange={(event) => updateTicket(ticket.id, "status", event.target.value)}>
+    <select style={compactSelect} value={ticket.status} data-ticket-field="status" onChange={(event) => updateTicket(ticket.id, "status", event.target.value)}>
       {allStatusOptions.map((option) => (
         <option key={option.value} value={option.value}>{option.label}</option>
       ))}
@@ -890,7 +958,7 @@ export function PumpdownTicketsPage({ isMobile, onBack, onOpenSchedule, wsEnergy
   );
 
   const renderTicketRow = (ticket) => (
-    <tr key={ticket.id}>
+    <tr key={ticket.id} ref={(element) => { if (element) ticketElementsRef.current.set(ticket.id, element); else ticketElementsRef.current.delete(ticket.id); }}>
       <td style={tableCell}>{renderFleetControl(ticket)}</td>
       <td style={tableCell}>{renderCustomerControl(ticket)}</td>
       <td style={tableCell}>{renderJobControl(ticket)}</td>
@@ -907,7 +975,7 @@ export function PumpdownTicketsPage({ isMobile, onBack, onOpenSchedule, wsEnergy
   );
 
   const renderTicketCard = (ticket) => (
-    <div key={ticket.id} style={mobileTicketPanel}>
+    <div key={ticket.id} ref={(element) => { if (element) ticketElementsRef.current.set(ticket.id, element); else ticketElementsRef.current.delete(ticket.id); }} style={mobileTicketPanel}>
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10, marginBottom: 12 }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 15, fontWeight: 800, color: "#111827", overflowWrap: "anywhere" }}>
@@ -993,6 +1061,11 @@ export function PumpdownTicketsPage({ isMobile, onBack, onOpenSchedule, wsEnergy
 
   return (
     <div style={{ background: "linear-gradient(180deg, #f3f7fc 0%, #f8fafc 45%, #f8fafc 100%)", minHeight: "100vh", padding: isMobile ? 12 : 18, color: "#111827", colorScheme: "light" }}>
+      {moveNotice ? (
+        <div role="status" style={{ position: "fixed", bottom: 20, left: "50%", transform: "translateX(-50%)", zIndex: 100, width: "max-content", maxWidth: "calc(100vw - 32px)", boxSizing: "border-box", padding: "12px 16px", borderRadius: 12, background: "#111827", color: "#ffffff", boxShadow: "0 4px 16px #0003", pointerEvents: "none" }}>
+          {moveNotice}
+        </div>
+      ) : null}
       <div style={{ maxWidth: 1220, margin: "0 auto", textAlign: "left" }}>
         <div style={{ ...refinedCard, marginBottom: 16, padding: isMobile ? 14 : 18 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
