@@ -1,14 +1,12 @@
+import "./tickets.css";
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
-  addActionButton,
   card,
   input,
   label,
   notificationBase,
   notificationStyles,
   removeActionButton,
-  row,
-  section,
   selectInput,
   supabase,
 } from "../fleetReport/config";
@@ -283,28 +281,13 @@ const templateTickets = [
   },
 ];
 
-const tableCell = {
-  padding: 10,
-  borderBottom: "1px solid #e2e8f0",
-  verticalAlign: "top",
-};
-
-const tableHeader = {
-  ...tableCell,
-  background: "#f8fafc",
-  color: "#334155",
-  fontSize: 11,
-  fontWeight: 800,
-  textTransform: "uppercase",
-  letterSpacing: 0.4,
-  whiteSpace: "nowrap",
-};
-
 const compactInput = {
   ...input,
   padding: "8px 10px",
   borderRadius: 10,
   fontSize: 14,
+  minWidth: 0,
+  minHeight: 42,
 };
 
 const compactSelect = {
@@ -312,6 +295,8 @@ const compactSelect = {
   padding: "8px 30px 8px 10px",
   borderRadius: 10,
   fontSize: 14,
+  minWidth: 0,
+  minHeight: 42,
 };
 
 const pageButton = {
@@ -351,10 +336,6 @@ const sectionHeader = {
   borderBottom: "1px solid #e2e8f0",
 };
 
-const sectionBody = {
-  padding: 14,
-};
-
 const sectionKicker = {
   fontSize: 11,
   fontWeight: 800,
@@ -370,27 +351,6 @@ const fieldCaption = {
   fontSize: 12,
   fontWeight: 800,
   color: "#475569",
-};
-
-const mobileTicketPanel = {
-  border: "1px solid #e2e8f0",
-  borderRadius: 12,
-  padding: 12,
-  background: "#ffffff",
-  boxShadow: "0 8px 18px rgba(15, 23, 42, 0.05)",
-};
-
-const mobileFieldGrid = {
-  display: "grid",
-  gap: 10,
-  gridTemplateColumns: "1fr",
-};
-
-const desktopTableShell = {
-  overflowX: "auto",
-  border: "1px solid #e2e8f0",
-  borderRadius: 12,
-  background: "#ffffff",
 };
 
 const fleetNote = {
@@ -660,12 +620,29 @@ export function PumpdownTicketsPage({ isMobile, onBack, onOpenSchedule, wsEnergy
   const ticketElementsRef = useRef(new Map());
   const pendingFollowRef = useRef(null);
   const [moveNotice, setMoveNotice] = useState("");
+  const [highlightedTicket, setHighlightedTicket] = useState(null);
   const [syncMessage, setSyncMessage] = useState(supabase ? "Loading shared tickets..." : "Using local ticket backup");
   const [syncMessageType, setSyncMessageType] = useState(supabase ? "info" : "warning");
   const [newTicketSection, setNewTicketSection] = useState("1");
   const [copyMessage, setCopyMessage] = useState("");
 
-  const visibleTickets = tickets;
+  const [search, setSearch] = useState("");
+  const [fleetFilter, setFleetFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [editingId, setEditingId] = useState(null);
+  const [expandedTicketId, setExpandedTicketId] = useState(null);
+  const visibleTickets = useMemo(() => tickets.filter((ticket) => {
+    // Keep an edited ticket visible even if its new values no longer match the filters.
+    if (ticket.id === editingId) return true;
+    const query = search.trim().toLowerCase();
+    return (!fleetFilter || ticket.fleet === fleetFilter)
+      && (!statusFilter || ticket.status === statusFilter)
+      && (!query || [getCustomerName(ticket), ticket.job, ticket.ticket, getHomeSectionLabel(ticket.fleet)]
+        .some((value) => value.toLowerCase().includes(query)));
+  }), [tickets, search, fleetFilter, statusFilter, editingId]);
+  const resetFilters = () => {
+    setSearch(""); setFleetFilter(""); setStatusFilter(""); setEditingId(null);
+  };
 
   useEffect(() => {
     const persistence = createTicketPersistence({
@@ -727,18 +704,16 @@ export function PumpdownTicketsPage({ isMobile, onBack, onOpenSchedule, wsEnergy
       }
     }
     if (follow.moved) {
+      setHighlightedTicket({ id: follow.id });
       const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      (follow.hadFocus && control ? control : element).scrollIntoView({
+      const cardFits = element.getBoundingClientRect().height <= window.innerHeight - 40;
+      (cardFits ? element : control || element).scrollIntoView({
         behavior: reducedMotion ? "instant" : "smooth",
-        block: "center",
+        block: cardFits ? "start" : "center",
         inline: "nearest",
       });
-      if (!reducedMotion) element.animate([
-        { backgroundColor: "#fef3c7" },
-        { backgroundColor: "transparent" },
-      ], { duration: 1800 });
     }
-  }, [tickets]);
+  }, [tickets, expandedTicketId]);
 
   useEffect(() => {
     if (!moveNotice) return undefined;
@@ -746,9 +721,15 @@ export function PumpdownTicketsPage({ isMobile, onBack, onOpenSchedule, wsEnergy
     return () => window.clearTimeout(timeout);
   }, [moveNotice]);
 
-  const activeTicketCount = useMemo(() => visibleTickets.filter(ticketHasContent).length, [visibleTickets]);
-  const statusCounts = useMemo(() => getStatusCounts(visibleTickets), [visibleTickets]);
-  const teamsText = useMemo(() => formatPumpdownTickets(visibleTickets), [visibleTickets]);
+  useEffect(() => {
+    if (!highlightedTicket) return undefined;
+    const timeout = window.setTimeout(() => setHighlightedTicket(null), 4000);
+    return () => window.clearTimeout(timeout);
+  }, [highlightedTicket]);
+
+  const activeTicketCount = useMemo(() => tickets.filter(ticketHasContent).length, [tickets]);
+  const statusCounts = useMemo(() => getStatusCounts(tickets), [tickets]);
+  const teamsText = useMemo(() => formatPumpdownTickets(tickets), [tickets]);
 
   const unlockPage = (event) => {
     event.preventDefault();
@@ -778,9 +759,10 @@ export function PumpdownTicketsPage({ isMobile, onBack, onOpenSchedule, wsEnergy
     const ticket = tickets.find((item) => item.id === id);
     if (!ticket) return;
     const nextTicket = { ...ticket, ...fields };
+    setEditingId(id);
     const previousSection = getDisplaySection(ticket);
     const nextSection = getDisplaySection(nextTicket);
-    const previousIndex = groupedTickets.find((group) => group.value === previousSection)?.tickets.findIndex((item) => item.id === id);
+    const previousIndex = tickets.filter((item) => getDisplaySection(item) === previousSection).sort(compareTicketsForSection(previousSection)).findIndex((item) => item.id === id);
     const nextIndex = tickets
       .map((item) => item.id === id ? nextTicket : item)
       .filter((item) => getDisplaySection(item) === nextSection)
@@ -800,16 +782,24 @@ export function PumpdownTicketsPage({ isMobile, onBack, onOpenSchedule, wsEnergy
     persistenceRef.current.edit({ type: "update", id, fields });
   };
 
-  const addTicket = () => {
-    persistenceRef.current.edit({ type: "add", ticket: getBlankTicket(newTicketSection) });
+  const addTicket = (fleet = newTicketSection) => {
+    const ticket = getBlankTicket(fleet);
+    resetFilters();
+    setEditingId(ticket.id);
+    setExpandedTicketId(ticket.id);
+    pendingFollowRef.current = { id: ticket.id, key: "customer", moved: true, hadFocus: true, selectionStart: null };
+    setMoveNotice(`New ticket added to ${getHomeSectionLabel(fleet)}. Ready to enter the customer.`);
+    persistenceRef.current.edit({ type: "add", ticket });
   };
 
   const removeTicket = (id) => {
     const ticket = tickets.find((item) => item.id === id);
     if (!ticket) return;
     const description = [ticket.ticket ? `Ticket #${ticket.ticket}` : "this ticket", getCustomerName(ticket), ticket.job].filter(Boolean).join(" — ");
-    if (!window.confirm(`Remove ${description}?\n\nThis removes the ticket from the shared list for everyone.`)) return;
+    if (!window.confirm(`Remove ${description}?\n\n${getHomeSectionLabel(ticket.fleet)} · ${getStatusDisplayLabel(ticket.status)}\n\nThis removes the ticket and its information from the shared list for everyone.\n\nChoose Cancel to keep it, or OK to confirm removal.`)) return;
     persistenceRef.current.edit({ type: "remove", id });
+    if (editingId === id) setEditingId(null);
+    setMoveNotice(`${description} removed.`);
   };
 
   const copyForTeams = async () => {
@@ -844,7 +834,7 @@ export function PumpdownTicketsPage({ isMobile, onBack, onOpenSchedule, wsEnergy
 
     return (
       <>
-        <select style={compactSelect} value={ticket.fleet} data-ticket-field="fleet" onChange={(event) => updateTicket(ticket.id, "fleet", event.target.value)}>
+        <select style={compactSelect} value={ticket.fleet} aria-label="Fleet" data-ticket-field="fleet" onChange={(event) => updateTicket(ticket.id, "fleet", event.target.value)}>
           {homeSectionOptions.map((sectionOption) => (
             <option key={sectionOption.value} value={sectionOption.value}>{sectionOption.label}</option>
           ))}
@@ -857,13 +847,16 @@ export function PumpdownTicketsPage({ isMobile, onBack, onOpenSchedule, wsEnergy
   };
 
   const renderCustomerControl = (ticket) => (
-    <div style={inlineControl}>
+    <div style={{ ...inlineControl, flexWrap: "wrap" }}>
       <select
-        style={{ ...compactSelect, flex: ticket.customer === "Other" ? "0 0 94px" : 1 }}
+        aria-label="Customer" style={{ ...compactSelect, flex: 1 }}
         value={ticket.customer}
         data-ticket-field="customer" onChange={(event) => updateTicket(ticket.id, "customer", event.target.value)}
       >
-        <option value="">Select</option>
+        <option value="">Select customer</option>
+        {ticket.customer && !customerOptions.includes(ticket.customer) ? (
+          <option value={ticket.customer}>{ticket.customer} (existing)</option>
+        ) : null}
         {customerOptions.map((customer) => (
           <option key={customer} value={customer}>{customer}</option>
         ))}
@@ -871,7 +864,7 @@ export function PumpdownTicketsPage({ isMobile, onBack, onOpenSchedule, wsEnergy
       {ticket.customer === "Other" ? (
         <input
           style={{ ...compactInput, flex: 1, minWidth: 0 }}
-          placeholder="Customer"
+          aria-label="Other customer" placeholder="Customer"
           value={ticket.customerOther}
           data-ticket-field="customerOther" onChange={(event) => updateTicket(ticket.id, "customerOther", event.target.value)}
         />
@@ -883,7 +876,7 @@ export function PumpdownTicketsPage({ isMobile, onBack, onOpenSchedule, wsEnergy
     <input
       style={compactInput}
       value={ticket.job}
-      data-ticket-field="job" onChange={(event) => updateTicket(ticket.id, "job", event.target.value)}
+      aria-label="Pad / Job" data-ticket-field="job" onChange={(event) => updateTicket(ticket.id, "job", event.target.value)}
       placeholder="Pad, well, or job"
     />
   );
@@ -893,7 +886,7 @@ export function PumpdownTicketsPage({ isMobile, onBack, onOpenSchedule, wsEnergy
       <select
         style={{ ...compactSelect, flex: ticket.startMode === "date" ? "0 0 98px" : 1 }}
         value={ticket.startMode}
-        data-ticket-field="startMode" onChange={(event) => updateTicket(ticket.id, "startMode", event.target.value)}
+        aria-label="Start date setting" data-ticket-field="startMode" onChange={(event) => updateTicket(ticket.id, "startMode", event.target.value)}
       >
         {startModeOptions.map((option) => (
           <option key={option.value} value={option.value}>{option.label}</option>
@@ -904,7 +897,7 @@ export function PumpdownTicketsPage({ isMobile, onBack, onOpenSchedule, wsEnergy
           style={{ ...compactInput, flex: 1, minWidth: 0 }}
           type="date"
           value={ticket.startDate}
-          data-ticket-field="startDate" onChange={(event) => updateTicket(ticket.id, "startDate", event.target.value)}
+          aria-label="Start date" data-ticket-field="startDate" onChange={(event) => updateTicket(ticket.id, "startDate", event.target.value)}
         />
       ) : null}
     </div>
@@ -915,7 +908,7 @@ export function PumpdownTicketsPage({ isMobile, onBack, onOpenSchedule, wsEnergy
       <select
         style={{ ...compactSelect, flex: ticket.endMode === "date" ? "0 0 92px" : 1 }}
         value={ticket.endMode}
-        data-ticket-field="endMode" onChange={(event) => updateTicket(ticket.id, "endMode", event.target.value)}
+        aria-label="End date setting" data-ticket-field="endMode" onChange={(event) => updateTicket(ticket.id, "endMode", event.target.value)}
       >
         {endModeOptions.map((option) => (
           <option key={option.value} value={option.value}>{option.label}</option>
@@ -926,7 +919,7 @@ export function PumpdownTicketsPage({ isMobile, onBack, onOpenSchedule, wsEnergy
           style={{ ...compactInput, flex: 1, minWidth: 0 }}
           type="date"
           value={ticket.endDate}
-          data-ticket-field="endDate" onChange={(event) => updateTicket(ticket.id, "endDate", event.target.value)}
+          aria-label="End date" data-ticket-field="endDate" onChange={(event) => updateTicket(ticket.id, "endDate", event.target.value)}
         />
       ) : null}
     </div>
@@ -937,75 +930,68 @@ export function PumpdownTicketsPage({ isMobile, onBack, onOpenSchedule, wsEnergy
       style={compactInput}
       inputMode="numeric"
       value={ticket.ticket}
-      data-ticket-field="ticket" onChange={(event) => updateTicket(ticket.id, "ticket", event.target.value.replace(/[^0-9]/g, ""))}
+      aria-label="Ticket number" data-ticket-field="ticket" onChange={(event) => updateTicket(ticket.id, "ticket", event.target.value.replace(/[^0-9]/g, ""))}
       placeholder="Ticket"
     />
   );
 
   const renderStatusControl = (ticket) => (
-    <select style={compactSelect} value={ticket.status} data-ticket-field="status" onChange={(event) => updateTicket(ticket.id, "status", event.target.value)}>
+    <select style={compactSelect} value={ticket.status} aria-label="Status" data-ticket-field="status" onChange={(event) => updateTicket(ticket.id, "status", event.target.value)}>
       {allStatusOptions.map((option) => (
         <option key={option.value} value={option.value}>{option.label}</option>
       ))}
     </select>
   );
 
-  const renderMobileField = (caption, content) => (
-    <div>
+  const renderField = (caption, content, className = "") => (
+    <div className={`ticket-field ${className}`}>
       <span style={fieldCaption}>{caption}</span>
       {content}
     </div>
   );
 
-  const renderTicketRow = (ticket) => (
-    <tr key={ticket.id} ref={(element) => { if (element) ticketElementsRef.current.set(ticket.id, element); else ticketElementsRef.current.delete(ticket.id); }}>
-      <td style={tableCell}>{renderFleetControl(ticket)}</td>
-      <td style={tableCell}>{renderCustomerControl(ticket)}</td>
-      <td style={tableCell}>{renderJobControl(ticket)}</td>
-      <td style={tableCell}>{renderStartControl(ticket)}</td>
-      <td style={tableCell}>{renderEndControl(ticket)}</td>
-      <td style={tableCell}>{renderTicketNumberControl(ticket)}</td>
-      <td style={tableCell}>{renderStatusControl(ticket)}</td>
-      <td style={tableCell}>
-        <button type="button" onClick={() => removeTicket(ticket.id)} style={{ ...removeActionButton, padding: "8px 10px", borderRadius: 10 }}>
-          Remove
-        </button>
-      </td>
-    </tr>
-  );
-
   const renderTicketCard = (ticket) => (
-    <div key={ticket.id} ref={(element) => { if (element) ticketElementsRef.current.set(ticket.id, element); else ticketElementsRef.current.delete(ticket.id); }} style={mobileTicketPanel}>
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10, marginBottom: 12 }}>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 15, fontWeight: 800, color: "#111827", overflowWrap: "anywhere" }}>
-            {getCustomerName(ticket) || "New ticket"}
-          </div>
-          <div style={{ fontSize: 13, color: "#64748b", marginTop: 2, overflowWrap: "anywhere" }}>
-            {ticket.job || getHomeSectionLabel(ticket.fleet)}
-          </div>
+    <article key={ticket.id} className={`ticket-card${highlightedTicket?.id === ticket.id ? " ticket-card-highlighted" : ""}`}
+      aria-label={`Ticket ${ticket.ticket || "new"}: ${getCustomerName(ticket) || "Customer TBD"}`}
+      onFocusCapture={() => setEditingId(ticket.id)}
+      ref={(element) => { if (element) ticketElementsRef.current.set(ticket.id, element); else ticketElementsRef.current.delete(ticket.id); }}
+      style={{ borderLeftColor: statusTone[ticket.status]?.borderColor }}>
+      <div className="ticket-summary">
+        <div className="ticket-summary-job">
+          <h3>{getCustomerName(ticket) || "New ticket"}</h3>
+          <p>{ticket.job || "Pad / job needed"}</p>
         </div>
-        <span style={getStatusPillStyle(ticket.status)}>{getStatusDisplayLabel(ticket.status)}</span>
+        <div><span className="ticket-summary-label">Ticket / Fleet</span>
+          <strong>{ticket.ticket ? `#${ticket.ticket}` : "Number needed"}</strong>
+          <span className="ticket-summary-secondary">{getHomeSectionLabel(ticket.fleet)}</span>
+        </div>
+        <div><span className="ticket-summary-label">Start → End</span>
+          <span>{ticket.startMode === "date" && ticket.startDate ? ticket.startDate.split("-").slice(1).join("/") : "TBD"} → {ticket.endMode === "date" && ticket.endDate ? ticket.endDate.split("-").slice(1).join("/") : "TBD"}</span>
+        </div>
+        <span style={{ ...getStatusPillStyle(ticket.status), whiteSpace: "normal", textAlign: "center" }}>{getStatusDisplayLabel(ticket.status)}</span>
+        <button type="button" className="ticket-edit-button" aria-expanded={expandedTicketId === ticket.id} aria-controls={`ticket-edit-${ticket.id}`}
+          onClick={() => {
+            if (expandedTicketId === ticket.id) { setExpandedTicketId(null); return; }
+            setExpandedTicketId(ticket.id);
+            setEditingId(ticket.id);
+            pendingFollowRef.current = { id: ticket.id, key: "customer", moved: true, hadFocus: true, selectionStart: null };
+          }}>{expandedTicketId === ticket.id ? "Done ↑" : "Edit ↓"}</button>
       </div>
-
-      <div style={mobileFieldGrid}>
-        {renderMobileField("Fleet", renderFleetControl(ticket))}
-        {renderMobileField("Customer", renderCustomerControl(ticket))}
-        {renderMobileField("Pad / Job", renderJobControl(ticket))}
-        {renderMobileField("Start", renderStartControl(ticket))}
-        {renderMobileField("End", renderEndControl(ticket))}
-        {renderMobileField("Ticket #", renderTicketNumberControl(ticket))}
-        {renderMobileField("Status", renderStatusControl(ticket))}
+      <div id={`ticket-edit-${ticket.id}`} hidden={expandedTicketId !== ticket.id} className="ticket-edit-panel">
+      <div className="ticket-fields">
+        {renderField("Customer", renderCustomerControl(ticket))}
+        {renderField("Pad / Job", renderJobControl(ticket), "ticket-job")}
+        {renderField("Ticket #", renderTicketNumberControl(ticket))}
+        {renderField("Start", renderStartControl(ticket))}
+        {renderField("End", renderEndControl(ticket))}
+        {renderField("Status", renderStatusControl(ticket))}
       </div>
-
-      <button
-        type="button"
-        onClick={() => removeTicket(ticket.id)}
-        style={{ ...removeActionButton, width: "100%", marginTop: 12, borderRadius: 10 }}
-      >
-        Remove Ticket
-      </button>
-    </div>
+      <div className="ticket-card-footer">
+        <div className="ticket-fleet">{renderField("Assigned fleet", renderFleetControl(ticket))}</div>
+        <button type="button" onClick={() => removeTicket(ticket.id)} style={{ ...removeActionButton, width: "auto", padding: "8px 12px", borderRadius: 10 }}>Remove ticket</button>
+      </div>
+      </div>
+    </article>
   );
 
   if (!isUnlocked) {
@@ -1060,171 +1046,98 @@ export function PumpdownTicketsPage({ isMobile, onBack, onOpenSchedule, wsEnergy
   }
 
   return (
-    <div style={{ background: "linear-gradient(180deg, #f3f7fc 0%, #f8fafc 45%, #f8fafc 100%)", minHeight: "100vh", padding: isMobile ? 12 : 18, color: "#111827", colorScheme: "light" }}>
-      {moveNotice ? (
-        <div role="status" style={{ position: "fixed", bottom: 20, left: "50%", transform: "translateX(-50%)", zIndex: 100, width: "max-content", maxWidth: "calc(100vw - 32px)", boxSizing: "border-box", padding: "12px 16px", borderRadius: 12, background: "#111827", color: "#ffffff", boxShadow: "0 4px 16px #0003", pointerEvents: "none" }}>
-          {moveNotice}
-        </div>
-      ) : null}
-      <div style={{ maxWidth: 1220, margin: "0 auto", textAlign: "left" }}>
-        <div style={{ ...refinedCard, marginBottom: 16, padding: isMobile ? 14 : 18 }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", width: isMobile ? "100%" : "auto" }}>
-              <button type="button" onClick={onBack} style={{ ...pageButton, background: "#e2e8f0", border: "none", flex: isMobile ? 1 : "none" }}>
-                Back to Fleet Report
-              </button>
-              {onOpenSchedule ? (
-                <button type="button" onClick={onOpenSchedule} style={{ ...pageButton, background: "#ecfeff", border: "1px solid #67e8f9", color: "#0e7490", WebkitTextFillColor: "#0e7490", flex: isMobile ? 1 : "none" }}>
-                  Pumpdown Schedule
-                </button>
-              ) : null}
-            </div>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", width: isMobile ? "100%" : "auto" }}>
-              <button type="button" onClick={copyForTeams} style={{ ...pageButton, flex: isMobile ? 1 : "none", background: "#111827", border: "none", color: "#ffffff", WebkitTextFillColor: "#ffffff" }}>
-                Copy Teams Update
-              </button>
-              <button type="button" onClick={lockPage} style={{ ...pageButton, flex: isMobile ? "0 0 92px" : "none", background: "#fee2e2", border: "1px solid #fca5a5", color: "#991b1b", WebkitTextFillColor: "#991b1b" }}>
-                Lock
-              </button>
-            </div>
+    <div className="tickets-page">
+      {moveNotice ? <div role="status" className="ticket-toast">{moveNotice}</div> : null}
+      <div className="tickets-container">
+        <header className="tickets-header">
+          <div className="tickets-navigation">
+            <button type="button" onClick={onBack} style={pageButton}>← Fleet report</button>
+            {onOpenSchedule ? <button type="button" onClick={onOpenSchedule} style={pageButton}>Pumpdown schedule ↗</button> : null}
+            <button type="button" onClick={lockPage} style={{ ...pageButton, marginLeft: "auto" }}>Lock page</button>
           </div>
-          <div style={{ textAlign: "center", marginTop: 16 }}>
-            <img
-              src={wsEnergyLogo}
-              alt="WS Energy Services logo"
-              style={{ width: isMobile ? 130 : 190, height: "auto", display: "block", margin: "0 auto 10px", objectFit: "contain" }}
-            />
-            <h1 style={{ margin: 0, fontSize: isMobile ? 24 : 32, lineHeight: 1.2, color: "#111827" }}>
-              Pumpdown Tickets
-            </h1>
-            <div style={{ marginTop: 10, display: "flex", justifyContent: "center", gap: 8, flexWrap: "wrap" }}>
-              <span style={getStatusPillStyle("need to complete")}>{activeTicketCount} active</span>
-              <span style={getStatusPillStyle("pending approval")}>{statusCounts.find((status) => status.value === "pending approval")?.count || 0} pending approval</span>
-              <span style={getStatusPillStyle("sent to customer")}>{statusCounts.find((status) => status.value === "sent to customer")?.count || 0} sent</span>
-              <span role="status" style={{ ...notificationBase, ...notificationStyles[syncMessageType] }}>{syncMessage}</span>
-              <button type="button" onClick={() => persistenceRef.current?.sync()} style={pageButton}>Save now / Retry</button>
+          <div className="tickets-title-row">
+            <div>
+              <div className="ticket-eyebrow">WS ENERGY SERVICES / OPERATIONS</div>
+              <h1>Pumpdown tickets</h1>
+              <p>Every ticket, from the field to completion. Changes save automatically.</p>
             </div>
+            <button type="button" onClick={copyForTeams} className="tickets-primary">Copy Teams update</button>
           </div>
-          {copyMessage ? (
-            <div style={{ display: "flex", justifyContent: "center", marginTop: 12 }}>
-              <div style={{ ...notificationBase, ...notificationStyles.success }}>{copyMessage}</div>
-            </div>
-          ) : null}
+          <div className="tickets-sync">
+            <span role="status" style={{ ...notificationBase, ...notificationStyles[syncMessageType], boxShadow: "none" }}>{syncMessage}</span>
+            <button type="button" onClick={() => persistenceRef.current?.sync()} className="tickets-text-button">Save now / Retry</button>
+          </div>
+          {copyMessage ? <p role="status">{copyMessage}</p> : null}
+        </header>
+
+        <div className="tickets-stats" aria-label="Filter tickets by status">
+          <button type="button" aria-pressed={!statusFilter} onClick={() => { setStatusFilter(""); setEditingId(null); }} className={`ticket-stat ${!statusFilter ? "selected" : ""}`}>
+            <span>All tickets</span><strong>{activeTicketCount}</strong>
+          </button>
+          {statusCounts.map((status) => (
+            <button type="button" key={status.value} aria-pressed={statusFilter === status.value}
+              onClick={() => { setStatusFilter(statusFilter === status.value ? "" : status.value); setEditingId(null); }}
+              className={`ticket-stat ${statusFilter === status.value ? "selected" : ""}`}>
+              <span>{status.label}</span><strong style={{ color: statusTone[status.value].color }}>{status.count}</strong>
+            </button>
+          ))}
         </div>
 
-        <div style={{ display: "grid", gap: 16, gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 1.45fr) minmax(340px, 0.55fr)" }}>
-          <div style={{ display: "grid", gap: 16, minWidth: 0 }}>
-            <div style={refinedCard}>
-              <h2 style={{ margin: "0 0 12px", fontSize: 22, color: "#111827" }}>Add Ticket</h2>
-              <div style={row}>
-                <div>
-                  <label style={label}>Fleet</label>
-                  <select style={selectInput} value={newTicketSection} onChange={(event) => setNewTicketSection(event.target.value)}>
-                    {homeSectionOptions.map((sectionOption) => (
-                      <option key={sectionOption.value} value={sectionOption.value}>{sectionOption.label}</option>
-                    ))}
-                  </select>
-                </div>
-                <div style={{ display: "flex", alignItems: "end" }}>
-                  <button type="button" onClick={addTicket} style={{ ...addActionButton, width: "100%", background: "#111827", border: "none", color: "#ffffff", WebkitTextFillColor: "#ffffff" }}>
-                    Add Ticket
-                  </button>
-                </div>
-              </div>
-            </div>
+        <section className="tickets-toolbar" aria-label="Find and add tickets">
+          <div className="tickets-filter-row">
+            <label className="tickets-search"><span style={fieldCaption}>Find a ticket</span>
+              <input type="search" style={compactInput} placeholder="Customer, pad / job, or ticket #" value={search} onChange={(event) => { setSearch(event.target.value); setEditingId(null); }} />
+            </label>
+            <label><span style={fieldCaption}>Fleet</span>
+              <select style={compactSelect} value={fleetFilter} onChange={(event) => { setFleetFilter(event.target.value); setEditingId(null); }}>
+                <option value="">All fleets</option>
+                {homeSectionOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            </label>
+            <button type="button" className="tickets-text-button" onClick={resetFilters}>Clear filters</button>
+          </div>
+          <div className="tickets-add-row">
+            <label><span style={fieldCaption}>New ticket fleet</span>
+              <select style={compactSelect} value={newTicketSection} onChange={(event) => setNewTicketSection(event.target.value)}>
+                {homeSectionOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            </label>
+            <button type="button" className="tickets-primary" onClick={() => addTicket()}>+ Add ticket</button>
+          </div>
+        </section>
 
-            {groupedTickets.map((group) => {
-              const accent = getSectionAccent(group.value);
-              const groupActiveCount = group.tickets.filter(ticketHasContent).length;
+        <div className="tickets-results">
+          <span role="status">Showing {visibleTickets.length} of {tickets.length} tickets{statusFilter ? ` · ${getStatusDisplayLabel(statusFilter)}` : ""}</span>
+          <label>Jump to section <select aria-label="Jump to section" value="" onChange={(event) => document.getElementById(`ticket-section-${event.target.value}`)?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth", block: "start" })}>
+            <option value="">Choose section…</option>
+            {groupedTickets.filter((group) => group.tickets.length).map((group) => <option key={group.value} value={group.value}>{group.label} ({group.tickets.length})</option>)}
+          </select></label>
+        </div>
 
-              return (
-              <div key={group.value} style={{ ...sectionPanel, minWidth: 0 }}>
+        <main className="tickets-groups">
+          {!visibleTickets.length ? <div style={emptySectionStyle}><h2>No tickets match your filters</h2><p>Try a different customer, job, ticket number, or fleet.</p><button type="button" onClick={resetFilters} style={pageButton}>Show all tickets</button></div> : null}
+          {groupedTickets.filter((group) => group.tickets.length).map((group) => {
+            const accent = getSectionAccent(group.value);
+            return (
+              <section id={`ticket-section-${group.value}`} key={group.value} style={sectionPanel}>
                 <div style={sectionHeader}>
                   <div>
-                    <div style={sectionKicker}>{group.value === "Misc" ? "Misc" : group.value === "Completed" ? "Archive" : group.value === "PendingApproval" || group.value === "SentToCustomer" ? "Pending Workflow" : "Fleet"}</div>
-                    <h2 style={{ margin: 0, fontSize: isMobile ? 19 : 22, color: "#111827" }}>{group.label}</h2>
+                    <div style={sectionKicker}>{group.value === "Completed" ? "Archive" : homeSectionValues.has(group.value) ? "Field operations" : "Workflow"}</div>
+                    <h2 style={{ margin: 0, fontSize: 20 }}>{group.label} <span style={{ fontSize: 13, fontWeight: 600, color: accent.color }}>({group.tickets.length})</span></h2>
                   </div>
-                  <div style={{ ...notificationBase, background: accent.background, borderColor: accent.borderColor, color: accent.color }}>
-                    {groupActiveCount} active
-                  </div>
+                  {homeSectionValues.has(group.value) ? <button type="button" className="tickets-text-button" onClick={() => addTicket(group.value)}>+ Add to {group.label}</button> : null}
                 </div>
+                <div className="ticket-section-cards">{group.tickets.map(renderTicketCard)}</div>
+              </section>
+            );
+          })}
+        </main>
 
-                <div style={sectionBody}>
-                  {group.tickets.length ? (
-                    isMobile ? (
-                      <div style={{ display: "grid", gap: 12 }}>
-                        {group.tickets.map(renderTicketCard)}
-                      </div>
-                    ) : (
-                  <div style={desktopTableShell}>
-                    <table style={{ width: "100%", minWidth: 1280, borderCollapse: "collapse", tableLayout: "fixed", background: "#ffffff" }}>
-                      <thead>
-                        <tr>
-                          <th style={{ ...tableHeader, width: 150 }}>Fleet</th>
-                          <th style={{ ...tableHeader, width: 230 }}>Customer</th>
-                          <th style={{ ...tableHeader, width: 210 }}>Pad / Job</th>
-                          <th style={{ ...tableHeader, width: 220 }}>Start</th>
-                          <th style={{ ...tableHeader, width: 220 }}>End</th>
-                          <th style={{ ...tableHeader, width: 126 }}>Ticket #</th>
-                          <th style={{ ...tableHeader, width: 180 }}>Status</th>
-                          <th style={{ ...tableHeader, width: 108 }}>Action</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {group.tickets.map(renderTicketRow)}
-                      </tbody>
-                    </table>
-                  </div>
-                    )
-                  ) : (
-                    <div style={emptySectionStyle}>No tickets in this section.</div>
-                  )}
-                </div>
-              </div>
-              );
-            })}
-          </div>
-
-          <div style={{ display: "grid", gap: 16, alignContent: "start", position: isMobile ? "static" : "sticky", top: isMobile ? undefined : 14 }}>
-            <div style={refinedCard}>
-              <h2 style={{ margin: 0, fontSize: 22, color: "#111827" }}>Teams Preview</h2>
-              <pre
-                style={{
-                  ...section,
-                  marginTop: 12,
-                  maxHeight: isMobile ? 360 : 520,
-                  whiteSpace: "pre-wrap",
-                  fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-                  fontSize: 13,
-                  lineHeight: 1.45,
-                  color: "#111827",
-                  overflowX: "auto",
-                }}
-              >
-                {teamsText}
-              </pre>
-              <button type="button" onClick={copyForTeams} style={{ ...pageButton, marginTop: 12, width: "100%", background: "#111827", border: "none", color: "#ffffff", WebkitTextFillColor: "#ffffff" }}>
-                Copy Teams Update
-              </button>
-            </div>
-
-            <div style={refinedCard}>
-              <h2 style={{ margin: 0, fontSize: 22, color: "#111827" }}>Quick Counts</h2>
-              <div style={{ display: "grid", gap: 10, gridTemplateColumns: isMobile ? "1fr 1fr" : "1fr 1fr", marginTop: 12 }}>
-                <div style={{ ...section, marginTop: 0, padding: 12 }}>
-                  <div style={{ fontSize: 13, color: "#64748b", fontWeight: 700 }}>Active Rows</div>
-                  <div style={{ fontSize: 28, fontWeight: 800, color: "#111827" }}>{activeTicketCount}</div>
-                </div>
-                {statusCounts.map((status) => (
-                  <div key={status.value} style={{ ...section, marginTop: 0, padding: 12 }}>
-                    <div style={{ fontSize: 13, color: "#64748b", fontWeight: 700 }}>{status.label}</div>
-                    <div style={{ fontSize: 28, fontWeight: 800, color: "#111827" }}>{status.count}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
+        <details className="tickets-preview">
+          <summary>Teams update preview <span>Full list · includes all tickets regardless of filters</span></summary>
+          <pre>{teamsText}</pre>
+          <button type="button" onClick={copyForTeams} className="tickets-primary">Copy Teams update</button>
+        </details>
       </div>
     </div>
   );
