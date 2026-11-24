@@ -409,7 +409,10 @@ export const TRACTOR_OPTIONS = Array.from({ length: 26 }, (_, idx) => `RT-${Stri
 
 export const TRUCK_OPTIONS = ["416","464","496","706","710","715","721","722","723","724","725","727","728","745","746","747","749","767","768","769"];
 
-export const COMMAND_CENTER_OPTIONS = Array.from({ length: 7 }, (_, i) => `CT-${String(i + 1).padStart(3, "0")}`);
+export const COMMAND_CENTER_OPTIONS = [
+  "AT-001",
+  ...Array.from({ length: 7 }, (_, i) => `CT-${String(i + 1).padStart(3, "0")}`),
+];
 
 export const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 export const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
